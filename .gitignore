@@ -1,0 +1,10 @@
+node_modules/
+.whissle/
+.DS_Store
+*.log
+npm-debug.log*
+# Never commit local credentials — the CLI stores the API key in ~/.whissle/config.json
+# (outside the repo), but guard against a stray copy here too.
+config.json
+.env
+.env.*
