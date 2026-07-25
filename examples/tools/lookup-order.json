@@ -1,0 +1,17 @@
+{
+  "name": "lookup_order",
+  "kind": "http",
+  "description": "Look up an order by its order number and return its status and details.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": { "type": "string", "description": "The customer's order number." }
+    },
+    "required": ["order_id"]
+  },
+  "binding": {
+    "url": "https://api.example.com/orders/{order_id}",
+    "method": "GET"
+  },
+  "credential_id": null
+}
