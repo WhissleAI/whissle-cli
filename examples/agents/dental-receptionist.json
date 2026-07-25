@@ -2,12 +2,34 @@
   "name": "Bright Smile Front Desk",
   "agent_type": "dental_receptionist",
   "direction": "inbound",
+
   "voice_gender": "female",
   "language_mode": "auto",
+  "video_enabled": false,
+
   "greeting": "Hello! Thanks for calling {{clinic_name|Bright Smile Dental}}. How can I make you smile today?",
   "system_prompt": "You are {{receptionist_name|the receptionist}}, the warm, efficient virtual front desk for {{clinic_name|Bright Smile Dental}}. Help callers BOOK, RESCHEDULE, or CANCEL appointments, share opening hours and directions, and answer common questions. Always check availability before offering a slot, and read back the date, time, and patient name to confirm. Collect the caller's name and phone number for any booking. For clinical questions (pain, medication, diagnosis) do not advise — offer to have a clinician call back. Keep it brief and friendly.",
+
+  "audio_ambience": "room",
+  "audio_humanizer_intensity": 1.0,
+  "ambient_scene": "office",
+  "ambient_level_db": -38,
+  "audio_inline_sounds": true,
+  "tool_sounds": "ui",
+
   "variables": [
     { "key": "clinic_name", "label": "Clinic name" },
     { "key": "receptionist_name", "label": "Receptionist name" }
+  ],
+
+  "tools": [
+    "get_hours",
+    "check_availability",
+    "book_appointment",
+    "reschedule_appointment",
+    "cancel_appointment",
+    "take_message",
+    "send_sms",
+    "search_knowledge_base"
   ]
 }

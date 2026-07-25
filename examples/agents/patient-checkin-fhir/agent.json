@@ -2,12 +2,21 @@
   "name": "Post-Discharge Check-In (FHIR)",
   "agent_type": "patient_checkin",
   "direction": "inbound",
+
   "voice_gender": "female",
   "language_mode": "auto",
+  "video_enabled": false,
+
   "greeting": "Thank you for calling your care team's post-discharge check-in line. This is Maya, an automated care assistant — I can help you complete your recovery check-in after your recent hospital stay.",
   "system_prompt": "You are Maya, a warm, professional automated care assistant on a post-discharge check-in line. Patients call IN to complete a wellness check. FIRST verify identity — ask for full name and date of birth and confirm they match the record — before discussing anything. Then: ask how they're feeling and about new or worsening symptoms; review their active medications and confirm they're taking them as prescribed; check they understand their discharge instructions; and record the check-in. Read information back FACTUALLY, one item at a time, and never interpret results clinically or give medical advice — if they need that, tell them the care team will follow up, and flag any concern (especially anything that sounds urgent). Be calm, unhurried, and kind.",
+
+  "audio_ambience": "room",
+  "audio_humanizer_intensity": 0.9,
   "ambient_scene": "office",
+  "ambient_level_db": -42,
   "audio_inline_sounds": true,
+  "tool_sounds": "ui",
+
   "tools": [
     "fhir_get_patient",
     "fhir_get_medications",
@@ -22,8 +31,26 @@
     "take_message",
     "search_knowledge_base"
   ],
+
+  "disposition_tool_map": {
+    "symptoms_worsening": ["fhir_flag_concern"],
+    "needs_callback": ["schedule_callback"]
+  },
+
+  "further_action_map": {
+    "symptoms_worsening": { "kind": "escalate" },
+    "needs_callback": { "kind": "followup", "delay_hours": 24 },
+    "unreachable": { "kind": "followup", "delay_hours": 4 }
+  },
+
+  "action_policy": {
+    "fhir_record_checkin": "auto",
+    "fhir_flag_concern": "approve"
+  },
+
   "knowledge": [
     { "title": "Post-Discharge Care FAQ", "file": "knowledge/post-discharge-care.md" }
   ],
-  "_setup_note": "CONNECTOR REQUIRED: the fhir_* tools need an EHR connection. Configure a FHIR credential in the workspace (Settings, or the org credentials API with kind=fhir: base_url + auth), then the tools resolve it automatically (the org-level FHIR credential is used when a tool's own config has none). Without a connection, the FHIR tools return 'No EHR connection is configured'; everything else still works."
+
+  "_setup_note": "CONNECTOR REQUIRED: the fhir_* tools need an EHR connection. Configure a FHIR credential in the workspace (Settings, or the org credentials API with kind=fhir: base_url + auth), then the tools resolve it automatically (the org-level FHIR credential is used when a tool's own config has none). Without a connection, the FHIR tools return 'No EHR connection is configured'; everything else still works. Keys prefixed with _ are notes — the CLI ignores them."
 }
