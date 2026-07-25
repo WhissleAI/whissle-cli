@@ -12,6 +12,7 @@ const GROUPS = {
   calls: () => import("../src/commands/calls.mjs"),
   kb: () => import("../src/commands/kb.mjs"),
   tools: () => import("../src/commands/tools.mjs"),
+  numbers: () => import("../src/commands/numbers.mjs"),
   models: () => import("../src/commands/models.mjs"),
   usage: () => import("../src/commands/usage.mjs"),
   config: () => import("../src/commands/config.mjs"),
@@ -72,6 +73,13 @@ ${bold("Knowledge & tools")}
   whissle tools list
   whissle tools create --file tool.json
   whissle tools attach <tool-id> --agent <agent-id>
+
+${bold("Phone numbers")}  ${dim("(needs numbers:read / numbers:write)")}
+  whissle numbers list
+  whissle numbers search [--country US] [--area 415] [--contains 555]
+  whissle numbers buy <+1…>              buy a number (deducts credits)
+  whissle numbers connect <+1…> --agent <agent-id>   route inbound to an agent
+  whissle numbers release <number-id>
 
 ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
   whissle models chat "prompt" [--system …] [--fast]

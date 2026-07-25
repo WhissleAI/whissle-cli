@@ -71,6 +71,7 @@ export async function request(method, path, { query, body, cfg = loadConfig() } 
 
 export const get = (path, opts) => request("GET", path, opts);
 export const post = (path, body, opts) => request("POST", path, { ...opts, body });
+export const put = (path, body, opts) => request("PUT", path, { ...opts, body });
 export const patch = (path, body, opts) => request("PATCH", path, { ...opts, body });
 export const del = (path, opts) => request("DELETE", path, opts);
 

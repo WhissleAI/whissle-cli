@@ -55,6 +55,13 @@ whissle kb add <agent-id> --url https://acme.com/faq
 whissle tools create --file tool.json
 whissle tools attach <tool-id> --agent <agent-id>
 
+# phone numbers  (key needs numbers:read / numbers:write)
+whissle numbers list                          # your workspace's numbers
+whissle numbers search --country US --area 415
+whissle numbers buy +14159675014              # buys it — deducts wallet credits
+whissle numbers connect +14159675014 --agent <id>   # route inbound to an agent
+whissle numbers release <number-id>
+
 # À-la-carte models  (key needs models:invoke)
 whissle models chat "Summarize this call" --fast
 whissle models tts "Hello from Whissle" --out hello.mp3
@@ -78,12 +85,13 @@ key). A `403 … missing required scope` tells you exactly which one:
 | `agents …` | `agents:read` / `agents:write` |
 | `calls …`, `chat` | `calls:read` (chat also uses `agents:write`) |
 | `kb …` | `kb:read` / `kb:write` |
+| `tools …` | `tools:read` / `tools:write` |
+| `numbers …` | `numbers:read` / `numbers:write` (buy spends credits) |
 | `models …` | `models:invoke` |
 | `usage` | `billing:read` |
 
-**Known limit:** `whissle tools …` needs the custom-tools API to accept API keys —
-today that management endpoint is dashboard-only, so tool CRUD from the CLI is
-pending a small backend change. Everything else works with a secret key.
+Scopes are fixed when a key is created, so an older key won't have the newer
+ones — mint a fresh key (or ask an admin to widen it) if a command 403s.
 
 ## Keys, at a glance
 
