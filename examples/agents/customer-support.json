@@ -2,11 +2,28 @@
   "name": "Acme Support",
   "agent_type": "customer_support",
   "direction": "inbound",
+
   "voice_gender": "female",
   "language_mode": "auto",
+  "video_enabled": false,
+
   "greeting": "Hi, thanks for calling {{company|Acme}} support — how can I help you today?",
   "system_prompt": "You are a warm, efficient support agent for {{company|Acme}}. Help callers resolve issues quickly: understand the problem, answer from what you know, and use your tools to look things up before guessing. Confirm details back to the caller. If you cannot resolve it, take a clear message or offer to transfer to a human. Never invent policy, prices, or account details — if you are unsure, say so and offer to follow up. Keep replies short and spoken-friendly.",
+
+  "audio_ambience": "room",
+  "audio_humanizer_intensity": 1.0,
+  "ambient_scene": "office",
+  "ambient_level_db": -38,
+  "audio_inline_sounds": true,
+  "tool_sounds": "ui",
+
   "variables": [
     { "key": "company", "label": "Company name" }
+  ],
+
+  "tools": [
+    "search_knowledge_base",
+    "take_message",
+    "send_sms"
   ]
 }
