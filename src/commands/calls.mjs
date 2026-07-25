@@ -2,7 +2,7 @@
 // The programmatic records surface: pull your calls, transcripts and recordings
 // for your own evaluation, QA and logs. Requires a key with `calls:read`.
 import { writeFileSync } from "node:fs";
-import { get } from "../api.mjs";
+import { get, post } from "../api.mjs";
 import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal } from "../ui.mjs";
 
 function turnsOf(call) {
@@ -22,6 +22,20 @@ function renderTranscript(call) {
 }
 
 export async function run(sub, args, flags) {
+  if (sub === "start") {
+    // Place an OUTBOUND call from an agent to a phone number (deducts credits).
+    if (!flags.agent || !flags.to) fatal("Usage: whissle calls start --agent <agent-id> --to <+1…> [--from <+1…>] [--customer <id>]");
+    const res = await post("/api/calls/start", {
+      agent_id: flags.agent, to_number: flags.to,
+      ...(flags.from ? { from_number: flags.from } : {}),
+      ...(flags.customer ? { customer_id: flags.customer } : {}),
+    });
+    if (flags.json) return printJson(res);
+    ok(`Calling ${flags.to} from agent ${flags.agent}` + (res.call_id || res.id ? ` (call ${res.call_id || res.id})` : ""));
+    out(dim("  Watch it: ") + `whissle calls get ${res.call_id || res.id || "<call-id>"}`);
+    return;
+  }
+
   if (!sub || sub === "list") {
     const calls = await get("/api/calls", {
       query: { agent_id: flags.agent, limit: flags.limit || 25, status: flags.status },

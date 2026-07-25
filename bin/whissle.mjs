@@ -13,6 +13,7 @@ const GROUPS = {
   kb: () => import("../src/commands/kb.mjs"),
   tools: () => import("../src/commands/tools.mjs"),
   numbers: () => import("../src/commands/numbers.mjs"),
+  embed: () => import("../src/commands/embed.mjs"),
   models: () => import("../src/commands/models.mjs"),
   usage: () => import("../src/commands/usage.mjs"),
   config: () => import("../src/commands/config.mjs"),
@@ -74,12 +75,15 @@ ${bold("Knowledge & tools")}
   whissle tools create --file tool.json
   whissle tools attach <tool-id> --agent <agent-id>
 
-${bold("Phone numbers")}  ${dim("(needs numbers:read / numbers:write)")}
-  whissle numbers list
-  whissle numbers search [--country US] [--area 415] [--contains 555]
+${bold("Channels — one agent, everywhere")}
+  ${dim("Web embed")}  ${dim("(agents:write)")}
+  whissle embed enable <agent-id> --origin https://yoursite.com   voice widget on a site
+  whissle embed show <agent-id>          embed key + paste-able snippet
+  ${dim("Phone")}  ${dim("(numbers:read / numbers:write)")}
+  whissle numbers search [--country US] [--area 415]
   whissle numbers buy <+1…>              buy a number (deducts credits)
-  whissle numbers connect <+1…> --agent <agent-id>   route inbound to an agent
-  whissle numbers release <number-id>
+  whissle numbers connect <+1…> --agent <agent-id>   route inbound to that agent
+  whissle numbers list | release <number-id>
 
 ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
   whissle models chat "prompt" [--system …] [--fast]
