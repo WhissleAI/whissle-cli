@@ -1,0 +1,13 @@
+{
+  "name": "Patient check-in (FHIR)",
+  "package": "../../agents/patient-checkin-fhir/agent.json",
+  "note": "Requires a FHIR connector configured in the workspace AND backend PR #450 (call_id stash fix) deployed. Uses the test patient David C Ali / 1965-09-18 — replace with a patient that exists in your connected EHR.",
+  "turns": [
+    { "say": "Hi, I'm calling to do my post-discharge check-in." },
+    { "say": "My full name is David C Ali, date of birth September 18th, 1965.", "expectTools": ["fhir_get_patient"] },
+    { "say": "Yes, that's correct." },
+    { "say": "Can you tell me what medications I'm currently prescribed? I forgot.", "expectTools": ["fhir_get_medications"] },
+    { "say": "I've been feeling a bit dizzy since yesterday." },
+    { "say": "No, no other symptoms — just the dizziness. That's all." }
+  ]
+}

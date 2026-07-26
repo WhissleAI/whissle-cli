@@ -70,7 +70,7 @@ async function ingestKnowledge(agentId, knowledge, baseDir, quiet) {
   return n;
 }
 
-async function createFromSpec(spec, baseDir, flags) {
+export async function createFromSpec(spec, baseDir, flags) {
   const quiet = !!flags.json; // keep stdout clean for --json (only the final object)
   // Accept prompt_seed (whissle_agent_data manifests) as system_prompt.
   if (!spec.system_prompt && spec.prompt_seed) spec.system_prompt = spec.prompt_seed;
