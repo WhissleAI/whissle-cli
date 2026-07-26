@@ -50,13 +50,30 @@ whissle calls audio <call-id>           # signed recording URL
 whissle calls export --agent <id> --since 2026-07-01 --format jsonl --out calls.jsonl
 
 # Knowledge & custom tools
+whissle kb list <agent-id>
 whissle kb add <agent-id> --file handbook.pdf
 whissle kb add <agent-id> --url https://acme.com/faq
+whissle tools list
 whissle tools create --file tool.json
 whissle tools attach <tool-id> --agent <agent-id>
 
-# phone numbers  (key needs numbers:read / numbers:write)
+# Connectors — stored org credentials, e.g. a FHIR/EHR server  (needs connectors:read / connectors:write)
+whissle connectors list --kind fhir
+whissle connectors add --kind fhir --name "Epic Sandbox" \
+  --base-url https://fhir.example.org/r4 \
+  --auth client_credentials --token-url https://auth.example.org/token \
+  --client-id abc --client-secret ***          # agents' fhir_* tools resolve this automatically
+whissle connectors remove <id> --force
+
+# Web embed — the same agent as a voice widget on your site  (needs agents:write)
+whissle embed enable <agent-id> --origin https://yoursite.com
+whissle embed show <agent-id>                   # embed key + paste-able snippet
+whissle embed disable <agent-id>
+
+# Phone numbers  (key needs numbers:read / numbers:write)
 whissle numbers list                          # your workspace's numbers
+whissle numbers available                     # pool numbers you can claim (no purchase)
+whissle numbers claim <number-id>             # claim one from the pool
 whissle numbers search --country US --area 415
 whissle numbers buy +14159675014              # buys it — deducts wallet credits
 whissle numbers connect +14159675014 --agent <id>   # route inbound to an agent
@@ -86,12 +103,17 @@ key). A `403 … missing required scope` tells you exactly which one:
 | `calls …`, `chat` | `calls:read` (chat also uses `agents:write`) |
 | `kb …` | `kb:read` / `kb:write` |
 | `tools …` | `tools:read` / `tools:write` |
+| `connectors …` | `connectors:read` / `connectors:write` |
+| `embed …` | `agents:read` / `agents:write` |
 | `numbers …` | `numbers:read` / `numbers:write` (buy spends credits) |
 | `models …` | `models:invoke` |
 | `usage` | `billing:read` |
 
 Scopes are fixed when a key is created, so an older key won't have the newer
 ones — mint a fresh key (or ask an admin to widen it) if a command 403s.
+`connectors` is the newest scope: a key minted **before it existed cannot be
+granted it retroactively** and will be refused, so create a new key to manage
+connectors.
 
 ## Keys, at a glance
 

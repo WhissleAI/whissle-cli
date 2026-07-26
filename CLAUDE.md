@@ -36,13 +36,27 @@ src/ui.mjs             chalk table/kv/json/markdown(marked-terminal)/spinner. Br
 src/commands/
   config.mjs           login / logout / whoami / config
   agents.mjs           list / get / create / update / delete   (agents:read/write)
+                       create --file agent.json = full package: create + PATCH audio/config + ingest knowledge.
+                       CREATE_FIELDS vs PATCH_FIELDS decide the two-step apply — keep examples/README.md in sync.
   chat.mjs             interactive + one-shot text turn → POST /api/agents/{id}/chat/turn
-  calls.mjs            list / get / transcript / audio / export (calls:read)
+  calls.mjs            list / get / transcript / audio / export / start  (calls:read; start places an outbound call)
   kb.mjs               list / add (text|file|url)               (kb:read/write)
   tools.mjs            list / create / attach                   (org-scoped: /api/orgs/{org}/tools)
+  connectors.mjs       list / add / remove                      (connectors:read/write; org-scoped: /api/orgs/{org}/credentials)
+                       stored org credentials, e.g. a FHIR/EHR server — an agent's fhir_* tools resolve them.
+  embed.mjs            show / enable / disable                  (agents:read/write; /api/agents/{id}/embed) — voice widget on a site
+  numbers.mjs          list / available / search / buy / claim / connect / release  (numbers:read/write; /api/orgs/{org}/twilio)
   models.mjs           chat / tts / transcribe                  (models:invoke)
   usage.mjs            wallet balance + ledger                  (/api/orgs/{org}/wallet)
+
+examples/
+  agents/              ready-to-use agent packages for `agents create --file` (see examples/README.md — field reference)
+  tools/               a sample custom-tool spec for `tools create --file`
+  tests/               agentic-harness.mjs — multi-turn smoke test: create → converse → flag → delete (see examples/tests/README.md)
 ```
+
+The `connectors:read/write` scope is newer than the others; a key minted before it
+existed cannot be granted it and is refused — mint a fresh key to manage connectors.
 
 ## Key patterns
 

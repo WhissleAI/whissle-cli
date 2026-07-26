@@ -50,6 +50,7 @@ Exit code is non-zero if any **hard** finding fired, so it drops into CI.
 ## Note on the FHIR scenario
 
 `patient-checkin-fhir.json` needs a **FHIR connector** configured in the workspace
+(`whissle connectors add --kind fhir --name "…" --base-url … --auth …`)
 **and** the `call_id` patient-stash fix deployed (backend PR #450). Without the fix,
 `fhir_get_medications` fails after identity is confirmed and the run flags
 `tool-trouble` — which is precisely the regression this harness exists to catch.
