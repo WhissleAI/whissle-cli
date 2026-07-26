@@ -12,6 +12,7 @@ const GROUPS = {
   calls: () => import("../src/commands/calls.mjs"),
   kb: () => import("../src/commands/kb.mjs"),
   tools: () => import("../src/commands/tools.mjs"),
+  connectors: () => import("../src/commands/connectors.mjs"),
   numbers: () => import("../src/commands/numbers.mjs"),
   embed: () => import("../src/commands/embed.mjs"),
   models: () => import("../src/commands/models.mjs"),
@@ -74,6 +75,12 @@ ${bold("Knowledge & tools")}
   whissle tools list
   whissle tools create --file tool.json
   whissle tools attach <tool-id> --agent <agent-id>
+
+${bold("Connectors")}  ${dim("(needs connectors:read/write)")}  ${dim("— stored org credentials, e.g. FHIR/EHR")}
+  whissle connectors list [--kind fhir]
+  whissle connectors add --kind fhir --name "Epic Sandbox" --base-url https://fhir…/r4 \\
+                         --auth client_credentials --token-url … --client-id … --client-secret …
+  whissle connectors remove <id> [--force]
 
 ${bold("Channels — one agent, everywhere")}
   ${dim("Web embed")}  ${dim("(agents:write)")}
