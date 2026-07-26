@@ -1,0 +1,13 @@
+{
+  "name": "Dental — front desk (RAG + booking)",
+  "package": "../../agents/dental-clinic/agent.json",
+  "turns": [
+    { "say": "Hi, how much is a routine cleaning?", "expectTools": ["search_knowledge_base"] },
+    { "say": "And are you open on Saturdays?", "expectTools": ["search_knowledge_base"] },
+    { "say": "Do you take Cigna insurance?", "expectTools": ["search_knowledge_base"] },
+    { "say": "Great. I'd like to book a cleaning — my name is Jordan Lee." },
+    { "say": "How about next Tuesday afternoon?", "expectTools": ["check_availability"] },
+    { "say": "Actually my tooth is really hurting and it's swollen — can I be seen sooner?" },
+    { "say": "Okay. Before we finish, what's your address and are you open this Friday?" }
+  ]
+}

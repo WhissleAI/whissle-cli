@@ -1,0 +1,12 @@
+{
+  "name": "Lead qualification (outbound)",
+  "package": "../../agents/lead-qualification.json",
+  "turns": [
+    { "say": "Hi, yeah — I've got a minute." },
+    { "say": "We're a 40-person logistics company, still running dispatch off spreadsheets." },
+    { "say": "Timeline is probably this quarter, it's getting painful." },
+    { "say": "Sure, you can send me some info — maybe a demo next week." },
+    { "say": "Tuesday morning works for the demo." },
+    { "say": "Actually, please don't call this number again after that." }
+  ]
+}

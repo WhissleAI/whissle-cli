@@ -1,0 +1,11 @@
+{
+  "name": "Customer support (escalation + message)",
+  "package": "../../agents/customer-support.json",
+  "turns": [
+    { "say": "Hi, my order hasn't arrived and it's been two weeks." },
+    { "say": "The order number is AC-40192." },
+    { "say": "This is really frustrating — can I talk to a real person?" },
+    { "say": "Fine, take a message for the team then. My callback number is 555-0142.", "expectTools": ["take_message"] },
+    { "say": "Also, what is your refund policy?" }
+  ]
+}
