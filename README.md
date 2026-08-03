@@ -190,11 +190,36 @@ whissle memory delete <id>
 whissle keys list | create --name "ci" --scopes a,b,c [--type secret|publishable] | reveal <id> | delete <id>
 whissle team list | invite --email person@co.com --role owner|admin|member | revoke <id>
 whissle usage                                     # wallet balance + ledger
-whissle models chat "Summarize this" --fast | tts "Hello" --out hi.mp3 | transcribe rec.wav --diarize
+whissle models chat "Summarize this" --fast | tts "Hello" --out hi.mp3
 ```
 
 Add `--json` to any command for machine-readable output (pipe into `jq`, feed a
 scoring script, etc.).
+
+### Transcription (pre-recorded calls & meetings)
+
+Turn a recorded call or meeting into text — you pick the **language**, the
+platform picks the engine (the model/provider is pre-configured and never
+exposed). Speaker turns come from Whissle's own diarization.
+
+```bash
+whissle models transcribe call.wav                       # defaults to English
+whissle models transcribe call.mp3 --language en         # English
+whissle models transcribe call.mp3 --language hi         # Hindi (Devanagari)
+whissle models transcribe call.mp3 --language te         # Telugu
+whissle models transcribe call.mp3 --language hinglish   # Hindi–English code-mixed
+whissle models transcribe call.mp3 --language tenglish   # Telugu–English code-mixed
+whissle models transcribe call.wav --language en --diarize --json   # speaker-tagged segments
+```
+
+| flag | values | default |
+|---|---|---|
+| `--language` | `en` · `hi` · `te` · `hinglish` · `tenglish` | `en` |
+| `--diarize` | (bool) tag speaker turns | off |
+| `--json` | full `{text, segments[], duration_seconds, cost_usd}` | table |
+
+Common audio containers work (wav, mp3, m4a, flac). Billed per second of audio
+against your workspace wallet (`whissle usage`).
 
 ## Scopes
 
