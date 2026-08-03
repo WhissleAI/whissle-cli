@@ -1,9 +1,57 @@
 // whissle calls list|get|transcript|audio|export
 // The programmatic records surface: pull your calls, transcripts and recordings
 // for your own evaluation, QA and logs. Requires a key with `calls:read`.
-import { writeFileSync } from "node:fs";
+import { writeFileSync, readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
 import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal } from "../ui.mjs";
+
+// ── dynamic variables ────────────────────────────────────────────────────────
+// A call's dynamic variables resolve {{placeholders}} in the agent's prompt. Two
+// input styles, mergeable: --vars-file <json> (an object) and repeatable --var k=v.
+function collectVariables(flags) {
+  const vars = {};
+  if (flags["vars-file"]) {
+    try { Object.assign(vars, JSON.parse(readFileSync(flags["vars-file"], "utf8"))); }
+    catch (e) { fatal(`--vars-file: ${e.message}`); }
+  }
+  for (const v of [].concat(flags.var || [])) {
+    if (v === true) continue;
+    const eq = String(v).indexOf("=");
+    if (eq < 0) fatal(`--var must be key=value, got: ${v}`);
+    vars[String(v).slice(0, eq)] = String(v).slice(eq + 1);
+  }
+  return vars;
+}
+
+// ── minimal CSV → records (RFC-4180-ish: quoted fields, "" escape, CR/LF) ──────
+function csvToRecords(text) {
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (c !== "\r") field += c;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  const nonEmpty = rows.filter((r) => !(r.length === 1 && r[0].trim() === ""));
+  if (!nonEmpty.length) return [];
+  const header = nonEmpty[0].map((h) => h.trim());
+  return nonEmpty.slice(1).map((r) => Object.fromEntries(header.map((h, i) => [h, (r[i] ?? "").trim()])));
+}
+
+// Run async fn over items with a concurrency cap, preserving order.
+async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let idx = 0;
+  const worker = async () => { while (idx < items.length) { const i = idx++; results[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return results;
+}
 
 function turnsOf(call) {
   const t = call.transcript;
@@ -24,15 +72,73 @@ function renderTranscript(call) {
 export async function run(sub, args, flags) {
   if (sub === "start") {
     // Place an OUTBOUND call from an agent to a phone number (deducts credits).
-    if (!flags.agent || !flags.to) fatal("Usage: whissle calls start --agent <agent-id> --to <+1…> [--from <+1…>] [--customer <id>]");
+    if (!flags.agent || !flags.to) fatal("Usage: whissle calls start --agent <agent-id> --to <+1…> [--from <+1…>] [--var key=value ...] [--vars-file vars.json] [--customer <id>]");
+    const variables = collectVariables(flags);
     const res = await post("/api/calls/start", {
       agent_id: flags.agent, to_number: flags.to,
       ...(flags.from ? { from_number: flags.from } : {}),
       ...(flags.customer ? { customer_id: flags.customer } : {}),
+      ...(Object.keys(variables).length ? { variables } : {}),
     });
     if (flags.json) return printJson(res);
     ok(`Calling ${flags.to} from agent ${flags.agent}` + (res.call_id || res.id ? ` (call ${res.call_id || res.id})` : ""));
+    if (Object.keys(variables).length) out(dim(`  variables: ${Object.keys(variables).join(", ")}`));
     out(dim("  Watch it: ") + `whissle calls get ${res.call_id || res.id || "<call-id>"}`);
+    return;
+  }
+
+  if (sub === "campaign") {
+    // Batch outbound: one call per CSV row. Each column becomes a dynamic variable;
+    // the --to-col column (default "to_number") is the callee. Places REAL, billed
+    // calls to real people — gated behind --dry-run (preview) or --yes (place).
+    const agent = flags.agent || fatal("Usage: whissle calls campaign --agent <id> --file contacts.csv [--to-col to_number] [--from <+1…>] [--concurrency 3] [--delay 1000] (--dry-run | --yes)");
+    const file = flags.file || fatal("--file <contacts.csv> is required");
+    const toCol = flags["to-col"] || "to_number";
+    const conc = Math.max(1, parseInt(flags.concurrency || "3", 10));
+    const delay = Math.max(0, parseInt(flags.delay || "0", 10));
+    let records;
+    try { records = csvToRecords(readFileSync(file, "utf8")); }
+    catch (e) { return fatal(`--file: ${e.message}`); }
+    if (!records.length) return fatal(`No rows found in ${file}.`);
+
+    const cols = Object.keys(records[0]);
+    const jobs = records.map((rec) => {
+      const to = rec[toCol] ?? rec.to_number ?? rec.phone ?? rec.to ?? "";
+      const variables = { ...rec };
+      delete variables[toCol];
+      return { to: to.trim(), variables };
+    });
+    const missing = jobs.filter((j) => !j.to).length;
+    if (missing) return fatal(`${missing} row(s) have no number in column "${toCol}". Use --to-col <col>. Columns: ${cols.join(", ")}`);
+
+    if (flags["dry-run"]) {
+      table(["TO", "VARIABLES"], jobs.map((j) => [j.to, trunc(Object.entries(j.variables).map(([k, v]) => `${k}=${v}`).join(" · "), 60)]));
+      ok(`Dry run — ${jobs.length} call(s) would be placed for agent ${agent}. Re-run with --yes to place them.`);
+      return;
+    }
+    if (!flags.yes) return fatal(`This places ${jobs.length} REAL billed call(s) to real numbers from column "${toCol}". Re-run with --dry-run to preview, or --yes to place them.`);
+
+    out(dim(`Placing ${jobs.length} call(s) · agent ${agent} · concurrency ${conc}${delay ? ` · ${delay}ms/worker` : ""}`));
+    const results = await mapLimit(jobs, conc, async (job, i) => {
+      if (delay && i) await new Promise((r) => setTimeout(r, delay));
+      try {
+        const res = await post("/api/calls/start", {
+          agent_id: agent, to_number: job.to,
+          ...(flags.from ? { from_number: flags.from } : {}),
+          ...(Object.keys(job.variables).length ? { variables: job.variables } : {}),
+        });
+        const id = res.call_id || res.id || "";
+        if (!flags.json) out(`  ${brand("✓")} ${job.to}  ${dim(id)}`);
+        return { to: job.to, ok: true, call_id: id };
+      } catch (e) {
+        if (!flags.json) out(`  ${dim("✗")} ${job.to}  ${dim(e.message || String(e))}`);
+        return { to: job.to, ok: false, error: e.message || String(e) };
+      }
+    });
+    const okN = results.filter((r) => r.ok).length;
+    if (flags.json) return printJson(results);
+    ok(`Campaign done — ${okN}/${jobs.length} placed${okN < jobs.length ? `, ${jobs.length - okN} failed` : ""}.`);
+    if (okN) out(dim("  Pull results later: ") + `whissle calls export --agent ${agent} --format csv --out results.csv`);
     return;
   }
 
@@ -123,5 +229,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: calls ${sub}. Try list | get | transcript | audio | export.`);
+  fatal(`Unknown: calls ${sub}. Try start | campaign | list | get | transcript | audio | export.`);
 }

@@ -5,7 +5,7 @@ Guidance for Claude Code when working in this repository.
 ## Overview
 
 `whissle` is the command-line interface for the **Whissle Voice Agents platform**
-(the gateway at `gateway-backend.whissle.ai/bot`). It lets a user **configure**
+(the gateway at `aws-gateway-backend.whissle.ai/bot`). It lets a user **configure**
 agents, **run** them (text chat), and **pull records** (calls, transcripts,
 recordings, usage) for their own evaluation and logs. Node.js ESM, no build step.
 
@@ -39,7 +39,10 @@ src/commands/
                        create --file agent.json = full package: create + PATCH audio/config + ingest knowledge.
                        CREATE_FIELDS vs PATCH_FIELDS decide the two-step apply — keep examples/README.md in sync.
   chat.mjs             interactive + one-shot text turn → POST /api/agents/{id}/chat/turn
-  calls.mjs            list / get / transcript / audio / export / start  (calls:read; start places an outbound call)
+  calls.mjs            start / campaign / list / get / transcript / audio / export
+                       start = one outbound call; campaign = one call per CSV row (each column ->
+                       a dynamic {{variable}}, --to-col picks the callee, gated by --dry-run/--yes).
+                       start/campaign take --var k=v / --vars-file. (calls:read records; calls:write to place)
   kb.mjs               list / add (text|file|url)               (kb:read/write)
   tools.mjs            list / create / attach                   (org-scoped: /api/orgs/{org}/tools)
   connectors.mjs       list / add / remove                      (connectors:read/write; org-scoped: /api/orgs/{org}/credentials)

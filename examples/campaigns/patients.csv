@@ -1,0 +1,5 @@
+user_first_name,user_last_name,user_phone_number,user_email_address,patient_id,need_appointment,last_call_summary
+Karan,Singla,+12138224814,karan@whissle.ai,PT-1001,true,"Seen 3 weeks ago for a lower-back strain. Advised stretches and OTC pain relief; follow up if no improvement."
+Maria,Garcia,+14155550187,maria.garcia@example.com,PT-1002,true,"Post-op left-knee check. Reported mild swelling on last call; PT to reassess range of motion."
+Aisha,Khan,+14155550198,aisha.k@example.com,PT-1004,true,"Migraine follow-up. New trigger pattern noted; wants to discuss preventive options with the doctor."
+David,Nguyen,+14155550124,d.nguyen@example.com,PT-1005,false,"Annual physical wrap-up. Labs normal; no action needed unless new symptoms."

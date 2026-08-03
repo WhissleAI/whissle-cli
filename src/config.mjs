@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
 
-export const DEFAULT_BASE_URL = "https://gateway-backend.whissle.ai/bot";
+export const DEFAULT_BASE_URL = "https://aws-gateway-backend.whissle.ai/bot";
 
 const DIR = join(homedir(), ".whissle");
 const FILE = join(DIR, "config.json");
