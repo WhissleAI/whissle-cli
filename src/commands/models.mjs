@@ -18,10 +18,18 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "tts") {
-    const text = args.join(" ") || fatal('Usage: whissle models tts "text to speak" --out hello.mp3');
+    const text = args.join(" ") ||
+      fatal('Usage: whissle models tts "text to speak" --out hello.mp3 [--language en|hi|te|hinglish|tenglish] [--voice <id>]');
     const outPath = flags.out || "speech.mp3";
+    // --language picks a voice that speaks that language; omit it and the platform
+    // auto-detects from the script (Devanagari→Hindi, Telugu→Telugu). Engine hidden.
     const res = await raw("POST", EP.models.tts, {
-      body: { text, voice: flags.voice, output_format: flags["output-format"] },
+      body: {
+        text,
+        language: flags.language,
+        voice: flags.voice,
+        output_format: flags["output-format"],
+      },
     });
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(outPath, buf);

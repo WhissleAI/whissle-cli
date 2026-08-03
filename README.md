@@ -190,8 +190,12 @@ whissle memory delete <id>
 whissle keys list | create --name "ci" --scopes a,b,c [--type secret|publishable] | reveal <id> | delete <id>
 whissle team list | invite --email person@co.com --role owner|admin|member | revoke <id>
 whissle usage                                     # wallet balance + ledger
-whissle models chat "Summarize this" --fast | tts "Hello" --out hi.mp3
+whissle models chat "Summarize this" --fast
+whissle models tts "Hello" --out hi.mp3                       # English (default)
+whissle models tts "नमस्ते, कैसे हैं आप?" --language hi --out namaste.mp3   # speaks Hindi
 ```
+`models tts` takes `--language en|hi|te|hinglish|tenglish` (omit it and the platform
+auto-detects from the script); the voice/engine is chosen for you, never exposed.
 
 Add `--json` to any command for machine-readable output (pipe into `jq`, feed a
 scoring script, etc.).
