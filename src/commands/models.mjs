@@ -30,14 +30,18 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "transcribe") {
-    const file = args[0] || fatal("Usage: whissle models transcribe <audio-file> [--language xx] [--diarize]");
+    // Transcribe a pre-recorded file (calls, meetings). You pick the LANGUAGE;
+    // the platform picks the engine — the model/provider is never exposed.
+    const file = args[0] || fatal(
+      "Usage: whissle models transcribe <audio-file> [--language en|hi|te|hinglish|tenglish] [--diarize]");
     const r = await upload(EP.models.transcribe, {
       filePath: file,
-      fields: { language: flags.language || "", model: flags.model || "", diarize: flags.diarize ? "true" : "false" },
+      fields: { language: flags.language || "", diarize: flags.diarize ? "true" : "false" },
     });
     if (flags.json) return printJson(r);
     out(md(r.text));
-    out(dim(`\n  ${r.duration_seconds ?? "?"}s · $${r.cost_usd ?? "?"}`));
+    out(dim(`\n  ${r.duration_seconds ?? "?"}s · $${r.cost_usd ?? "?"}` +
+      (Array.isArray(r.segments) ? ` · ${r.segments.length} segment(s)` : "")));
     return;
   }
 
