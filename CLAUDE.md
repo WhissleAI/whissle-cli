@@ -23,6 +23,7 @@ in `SDKs/agents_js_sdk`): the SDK *runs* an agent in a web page with a publishab
 npm install
 node bin/whissle.mjs            # or `whissle` after `npm link`
 node bin/whissle.mjs help
+npm test                        # node --test "test/*.test.mjs" (pure-function units, no network)
 ```
 
 ## Architecture
@@ -39,14 +40,20 @@ src/endpoints.mjs      SINGLE SOURCE OF TRUTH for every backend PATH the CLI cal
 src/ui.mjs             chalk table/kv/json/markdown(marked-terminal)/spinner. Brand accent #e5484d.
 src/commands/
   config.mjs           login / logout / whoami / config
-  agents.mjs           list / get / create / update / delete   (agents:read/write)
+  agents.mjs           list / get / create / update / delete / versions / rollback / clone   (agents:read/write)
                        create --file agent.json = full package: create + PATCH audio/config + ingest knowledge.
                        CREATE_FIELDS vs PATCH_FIELDS decide the two-step apply — keep examples/README.md in sync.
   chat.mjs             interactive + one-shot text turn → POST /api/agents/{id}/chat/turn
-  calls.mjs            start / campaign / list / get / transcript / audio / export
+  calls.mjs            start / campaign / list / get / result / transcript / audio / export
                        start = one outbound call; campaign = one call per CSV row (each column ->
                        a dynamic {{variable}}, --to-col picks the callee, gated by --dry-run/--yes).
                        start/campaign take --var k=v / --vars-file. (calls:read records; calls:write to place)
+                       result = the partner outcome envelope (GET /api/calls/{id}/result); --wait polls until
+                       ready:true or a terminal status (isTerminal() in calls.mjs, unit-tested in test/).
+  actions.mjs          list / approve / reject / scheduled / cancel-scheduled   (actions:read/write; /api/actions —
+                       NOT org-prefixed. The human-approval queue for held post-call actions + scheduled follow-ups.)
+  compliance.mjs       suppressions / suppress / unsuppress / settings [set] / events   (compliance:read/write;
+                       org-scoped: /api/orgs/{org}/compliance — Do-Not-Call list, dial rules, evidence trail)
   kb.mjs               list / add (text|file|url)               (kb:read/write)
   tools.mjs            list / create / attach                   (org-scoped: /api/orgs/{org}/tools)
   connectors.mjs       list / add / remove                      (connectors:read/write; org-scoped: /api/orgs/{org}/credentials)

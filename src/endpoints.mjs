@@ -36,6 +36,22 @@ export const EP = {
     chatTurn: (id) => `/api/agents/${id}/chat/turn`,
     // Web embed (voice/text widget) config.
     embed: (id) => `/api/agents/${id}/embed`,
+    // Saved-config history: every meaningful save is snapshotted; rollback
+    // restores content only (deployment/routing untouched); clone = new draft.
+    versions: (id) => `/api/agents/${id}/versions`,
+    rollback: (id, vid) => `/api/agents/${id}/versions/${vid}/rollback`,
+    clone: (id) => `/api/agents/${id}/clone`,
+  },
+
+  // ── action inbox: human-approval queue for post-call actions ────────────────
+  // Key resolves the org (like /api/calls), so NOT org-prefixed.
+  actions: {
+    list: "/api/actions",
+    count: "/api/actions/count",
+    approve: (id) => `/api/actions/${id}/approve`,
+    reject: (id) => `/api/actions/${id}/reject`,
+    scheduled: "/api/actions/scheduled",
+    cancelScheduled: (id) => `/api/actions/scheduled/${id}/cancel`,
   },
 
   // ── calls: records surface + outbound placement ─────────────────────────────
@@ -44,6 +60,8 @@ export const EP = {
     list: "/api/calls",
     get: (id) => `/api/calls/${id}`,
     audioUrl: (id) => `/api/calls/${id}/audio/url`,
+    // Partner-facing outcome envelope — poll until `ready:true`.
+    result: (id) => `/api/calls/${id}/result`,
   },
 
   // ── server-side managed outbound campaigns ──────────────────────────────────
@@ -93,6 +111,15 @@ export const EP = {
     blockedDates: (org) => `/api/orgs/${org}/appointments/blocked-dates`,
     blockedDate: (org, id) => `/api/orgs/${org}/appointments/blocked-dates/${id}`,
     calendar: (org) => `/api/orgs/${org}/appointments/calendar`,
+  },
+
+  // ── org-scoped: calling compliance (/api/orgs/{org}/compliance) ──────────────
+  compliance: {
+    suppressions: (org) => `/api/orgs/${org}/compliance/suppressions`,
+    // `phone` must be URL-encoded by the caller (path segment).
+    suppression: (org, phone) => `/api/orgs/${org}/compliance/suppressions/${phone}`,
+    settings: (org) => `/api/orgs/${org}/compliance/settings`,
+    events: (org) => `/api/orgs/${org}/compliance/events`,
   },
 
   // ── org-scoped: stored connector credentials (/api/orgs/{org}/credentials) ───
