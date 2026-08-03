@@ -49,12 +49,26 @@ src/commands/
                        stored org credentials, e.g. a FHIR/EHR server — an agent's fhir_* tools resolve them.
   embed.mjs            show / enable / disable                  (agents:read/write; /api/agents/{id}/embed) — voice widget on a site
   numbers.mjs          list / available / search / buy / claim / connect / release  (numbers:read/write; /api/orgs/{org}/twilio)
+  integrations.mjs     catalog / list / add / connect / attach / detach / remove   (MCP connector store; org-scoped: /api/orgs/{org}/integrations) †
   models.mjs           chat / tts / transcribe                  (models:invoke)
+  keys.mjs             list / create / reveal / delete          (org-scoped: /api/orgs/{org}/api-keys) — secret shown once on create †
+  team.mjs             list / invite / revoke                   (invitations; org-scoped: /api/orgs/{org}/invitations) †
+  customers.mjs        list / get / create / import / update / delete   (contacts:read/write; /api/customers — NOT org-prefixed; contacts are agent-scoped so create/import need --agent)
+  appointments.mjs     list / hours / set-hours / blocked / block / unblock / calendar   (org-scoped: /api/orgs/{org}/appointments; --agent optional) †
+  sms.mjs              messages / opt-outs / consents / opt-in  (org-scoped: /api/orgs/{org}/sms — read + consent mgmt; agents send SMS, not the CLI) †
+  analytics.mjs        query / options / charts                 (analytics:read; org-scoped: /api/orgs/{org}/analytics)
+  campaigns.mjs        list / get / create / action             (campaigns:read/write; /api/campaigns — SERVER-SIDE managed, vs. `calls campaign` = client-side CSV batching)
+  meetings.mjs         list / get / schedule / cancel           (notetaker; /api/meetings) †
+  memory.mjs           list / add / confirm / delete            (Company Brain; org-scoped: /api/orgs/{org}/memory) †
   usage.mjs            wallet balance + ledger                  (/api/orgs/{org}/wallet)
+
+  † These backend routes are cookie-auth today; a parallel backend PR makes them
+    `wsk_`-key-authable. The CLI commands are correct and light up once that lands.
 
 examples/
   agents/              ready-to-use agent packages for `agents create --file` (see examples/README.md — field reference)
   tools/               a sample custom-tool spec for `tools create --file`
+  onboarding/          end-to-end flow: key → teammate → integration → customers → agent → campaign → analytics
   tests/               agentic-harness.mjs — multi-turn smoke test: create → converse → flag → delete (see examples/tests/README.md)
 ```
 
