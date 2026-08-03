@@ -14,8 +14,18 @@ const GROUPS = {
   tools: () => import("../src/commands/tools.mjs"),
   connectors: () => import("../src/commands/connectors.mjs"),
   numbers: () => import("../src/commands/numbers.mjs"),
+  integrations: () => import("../src/commands/integrations.mjs"),
   embed: () => import("../src/commands/embed.mjs"),
   models: () => import("../src/commands/models.mjs"),
+  keys: () => import("../src/commands/keys.mjs"),
+  team: () => import("../src/commands/team.mjs"),
+  customers: () => import("../src/commands/customers.mjs"),
+  appointments: () => import("../src/commands/appointments.mjs"),
+  sms: () => import("../src/commands/sms.mjs"),
+  analytics: () => import("../src/commands/analytics.mjs"),
+  campaigns: () => import("../src/commands/campaigns.mjs"),
+  meetings: () => import("../src/commands/meetings.mjs"),
+  memory: () => import("../src/commands/memory.mjs"),
   usage: () => import("../src/commands/usage.mjs"),
   config: () => import("../src/commands/config.mjs"),
 };
@@ -88,6 +98,54 @@ ${bold("Connectors")}  ${dim("(needs connectors:read/write)")}  ${dim("— store
   whissle connectors add --kind fhir --name "Epic Sandbox" --base-url https://fhir…/r4 \\
                          --auth client_credentials --token-url … --client-id … --client-secret …
   whissle connectors remove <id> [--force]
+
+${bold("Integrations")}  ${dim("— the MCP connector app store; enable external tools on agents")}
+  whissle integrations catalog                       curated providers
+  whissle integrations list
+  whissle integrations add --name "GitHub" --url https://… [--auth-mode oauth|bearer|apikey|none] [--token …]
+  whissle integrations connect <id> [--oauth]        test / authenticate (oauth prints an authorize URL)
+  whissle integrations attach <id> --agent <agent-id>   |   detach <id> --agent <agent-id>
+  whissle integrations remove <id>
+
+${bold("Onboarding")}  ${dim("— stand up a workspace: keys, teammates, contacts")}
+  whissle keys list
+  whissle keys create --name "Prod" [--scopes agents:read,calls:read] [--publishable]   ${dim("(secret shown once)")}
+  whissle keys reveal <id> | delete <id>
+  whissle team list
+  whissle team invite --email person@co.com [--role owner|admin|member]
+  whissle team revoke <invitation-id>
+  whissle customers list [--limit N] [--agent <id>]
+  whissle customers create --name N --phone <+1…> --agent <agent-id> [--email e]
+  whissle customers import --file contacts.csv --agent <agent-id> [--on-duplicate skip|update]
+  whissle customers get <id> | update <id> --<field> v | delete <id>
+
+${bold("Appointments")}  ${dim("— per-agent booking config (--agent optional)")}
+  whissle appointments list | calendar
+  whissle appointments hours | set-hours --file hours.json
+  whissle appointments blocked | block --date YYYY-MM-DD | unblock <id>
+
+${bold("SMS")}  ${dim("— delivery log + consent (no send; agents send SMS)")}
+  whissle sms messages [--limit N] | opt-outs | consents
+  whissle sms opt-in <+1…>            re-enable a suppressed number
+
+${bold("Analytics")}  ${dim("(needs analytics:read)")}
+  whissle analytics query [--metric count] [--group-by day] [--since D --until D] [--agent <id>]
+  whissle analytics options | charts
+
+${bold("Campaigns")}  ${dim("— SERVER-SIDE managed dialing (vs. `calls campaign` = client-side CSV batching)")}
+  whissle campaigns list | get <id>
+  whissle campaigns create --file campaign.json
+  whissle campaigns action <id> <pause|resume|cancel>
+
+${bold("Meetings")}  ${dim("— notetaker: send an agent into a Google Meet")}
+  whissle meetings list | get <id>
+  whissle meetings schedule --url https://meet.google.com/… [--agent <id>] [--title T]
+  whissle meetings cancel <id>
+
+${bold("Company Brain")}  ${dim("— org facts that ground every agent")}
+  whissle memory list [--status active|proposed]
+  whissle memory add --text "We close on federal holidays."
+  whissle memory confirm <id> | delete <id>
 
 ${bold("Channels — one agent, everywhere")}
   ${dim("Web embed")}  ${dim("(agents:write)")}
