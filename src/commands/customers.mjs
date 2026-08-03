@@ -5,6 +5,7 @@
 // agent, so create + import require --agent.
 import { readFileSync } from "node:fs";
 import { get, post, patch, del, upload } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, kv, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 // Real customer columns the backend maps to typed fields; anything else in a CSV
@@ -31,7 +32,7 @@ const custRow = (c) => [
 
 export async function run(sub, args, flags) {
   if (!sub || sub === "list") {
-    const res = await get("/api/customers", {
+    const res = await get(EP.customers.list, {
       query: { limit: flags.limit, agent_id: flags.agent },
     });
     if (flags.json) return printJson(res);
@@ -43,7 +44,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "get") {
     const id = args[0] || fatal("Usage: whissle customers get <id>");
-    const c = await get(`/api/customers/${id}`);
+    const c = await get(EP.customers.get(id));
     if (flags.json) return printJson(c);
     kv(c, ["id", "name", "phone_number", "email", "notes", "preferred_language", "agent_id", "call_count", "created_at"]);
     return;
@@ -61,7 +62,7 @@ export async function run(sub, args, flags) {
     if (flags.email) body.email = flags.email;
     if (flags.notes) body.notes = flags.notes;
     if (flags.language) body.preferred_language = flags.language;
-    const c = await post("/api/customers", body);
+    const c = await post(EP.customers.create, body);
     if (flags.json) return printJson(c);
     ok(`Created contact ${c.id} — ${c.name} (${c.phone_number})`);
     return;
@@ -95,7 +96,7 @@ export async function run(sub, args, flags) {
           "  --map <YourPhoneColumn>=phone_number",
       );
     }
-    const res = await upload("/api/customers/import", {
+    const res = await upload(EP.customers.import, {
       filePath: flags.file,
       fields: {
         agent_id: flags.agent,
@@ -119,7 +120,7 @@ export async function run(sub, args, flags) {
     if (flags.notes) body.notes = flags.notes;
     if (flags.language) body.preferred_language = flags.language;
     if (!Object.keys(body).length) fatal("Nothing to update — pass at least one of --name / --phone / --email / --notes / --language.");
-    const c = await patch(`/api/customers/${id}`, body);
+    const c = await patch(EP.customers.update(id), body);
     if (flags.json) return printJson(c);
     ok(`Updated contact ${c.id} — ${c.name}`);
     return;
@@ -127,7 +128,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle customers delete <id>");
-    await del(`/api/customers/${id}`);
+    await del(EP.customers.del(id));
     ok(`Deleted contact ${id} (and its calls + recordings)`);
     return;
   }

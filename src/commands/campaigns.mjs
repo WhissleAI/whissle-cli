@@ -6,6 +6,7 @@
 // paused/resumed/cancelled while it runs. Needs campaigns:read / campaigns:write.
 import { readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, kv, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 const asList = (r) => (Array.isArray(r) ? r : r?.campaigns || []);
@@ -18,7 +19,7 @@ const campRow = (c) => {
 
 export async function run(sub, args, flags) {
   if (!sub || sub === "list") {
-    const res = await get("/api/campaigns", { query: { limit: flags.limit } });
+    const res = await get(EP.campaigns.list, { query: { limit: flags.limit } });
     if (flags.json) return printJson(res);
     const rows = asList(res);
     table(["ID", "NAME", "STATUS", "CHANNEL", "PROGRESS"], rows.map(campRow));
@@ -28,7 +29,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "get") {
     const id = args[0] || fatal("Usage: whissle campaigns get <id>");
-    const c = await get(`/api/campaigns/${id}`);
+    const c = await get(EP.campaigns.get(id));
     if (flags.json) return printJson(c);
     kv(c, ["id", "name", "status", "channel", "agent_id", "calls_per_hour", "window_start", "window_end", "total", "recurrence", "next_run_at", "created_at"]);
     if (c.progress) out("\n  " + dim("progress: ") + JSON.stringify(c.progress));
@@ -44,7 +45,7 @@ export async function run(sub, args, flags) {
       );
     }
     const spec = JSON.parse(readFileSync(flags.file, "utf8"));
-    const c = await post("/api/campaigns", spec);
+    const c = await post(EP.campaigns.create, spec);
     if (flags.json) return printJson(c);
     ok(`Created campaign ${c.id} — ${c.name} (${c.status})` + (c.enqueued != null ? `, ${c.enqueued} queued` : ""));
     out(dim(`  Control it: whissle campaigns action ${c.id} pause|resume|cancel`));
@@ -55,7 +56,7 @@ export async function run(sub, args, flags) {
     const id = args[0] || fatal("Usage: whissle campaigns action <id> <pause|resume|cancel>");
     const action = args[1];
     if (!ACTIONS.includes(action)) fatal(`Action must be one of: ${ACTIONS.join(" | ")}`);
-    const res = await post(`/api/campaigns/${id}/${action}`, {});
+    const res = await post(EP.campaigns.action(id, action), {});
     if (flags.json) return printJson(res);
     ok(`Campaign ${id} → ${res?.status || action}`);
     return;

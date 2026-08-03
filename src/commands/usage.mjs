@@ -1,10 +1,11 @@
 // whissle usage   — workspace wallet balance + recent ledger.
 import { get, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, table, kv, trunc, dim, printJson } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const wallet = await get(`/api/orgs/${org}/wallet`);
+  const wallet = await get(EP.wallet(org));
   if (flags.json) return printJson(wallet);
 
   const bal = wallet.balance_usd ?? wallet.balance ?? wallet.credits ?? null;

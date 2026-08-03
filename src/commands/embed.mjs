@@ -3,6 +3,7 @@
 // also take phone calls (`whissle numbers connect`) — one agent, every channel.
 // Needs agents:read / agents:write.
 import { get, patch } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, kv, dim, bold, printJson, fatal } from "../ui.mjs";
 
 function show(cfg) {
@@ -26,7 +27,7 @@ export async function run(sub, args, flags) {
   const id = args[0] || fatal("Usage: whissle embed <show|enable|disable> <agent-id>");
 
   if (!sub || sub === "show") {
-    const cfg = await get(`/api/agents/${id}/embed`);
+    const cfg = await get(EP.agents.embed(id));
     if (flags.json) return printJson(cfg);
     out(bold("Web embed") + dim(` — agent ${id}`));
     return show(cfg);
@@ -39,7 +40,7 @@ export async function run(sub, args, flags) {
     if (!origins.length) {
       fatal("Add at least one site: whissle embed enable <agent-id> --origin https://yoursite.com");
     }
-    const cfg = await patch(`/api/agents/${id}/embed`, {
+    const cfg = await patch(EP.agents.embed(id), {
       embed_enabled: true,
       allowed_origins: origins,
       ...(flags.text ? { text_enabled: true } : {}),
@@ -50,7 +51,7 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "disable") {
-    await patch(`/api/agents/${id}/embed`, { embed_enabled: false });
+    await patch(EP.agents.embed(id), { embed_enabled: false });
     ok(`Embedding disabled for agent ${id}.`);
     return;
   }

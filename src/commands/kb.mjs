@@ -1,5 +1,6 @@
 // whissle kb list|add   — attach knowledge to an agent (RAG). Needs kb:read/write.
 import { get, post, upload } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
@@ -7,7 +8,7 @@ export async function run(sub, args, flags) {
 
   if (!sub || sub === "list") {
     if (!agentId) fatal("Usage: whissle kb list <agent-id>");
-    const docs = await get(`/api/agents/${agentId}/kb`);
+    const docs = await get(EP.agents.kb.base(agentId));
     if (flags.json) return printJson(docs);
     table(
       ["ID", "TITLE", "SOURCE", "CHARS"],
@@ -21,11 +22,11 @@ export async function run(sub, args, flags) {
     if (!agentId) fatal("Usage: whissle kb add <agent-id> [--text … | --file f.pdf | --url https://…]");
     let doc;
     if (flags.url) {
-      doc = await post(`/api/agents/${agentId}/kb/from-url`, { url: flags.url });
+      doc = await post(EP.agents.kb.fromUrl(agentId), { url: flags.url });
     } else if (flags.file) {
-      doc = await upload(`/api/agents/${agentId}/kb/upload`, { filePath: flags.file, fields: { title: flags.title } });
+      doc = await upload(EP.agents.kb.upload(agentId), { filePath: flags.file, fields: { title: flags.title } });
     } else if (flags.text) {
-      doc = await post(`/api/agents/${agentId}/kb`, {
+      doc = await post(EP.agents.kb.base(agentId), {
         title: flags.title || "Snippet",
         content: flags.text,
         source_type: "snippet",

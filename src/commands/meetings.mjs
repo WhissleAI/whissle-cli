@@ -6,6 +6,7 @@
 // Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, kv, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 const asList = (r) => (Array.isArray(r) ? r : r?.meetings || []);
@@ -19,7 +20,7 @@ const meetRow = (m) => [
 
 export async function run(sub, args, flags) {
   if (!sub || sub === "list") {
-    const res = await get("/api/meetings", { query: { limit: flags.limit } });
+    const res = await get(EP.meetings.list, { query: { limit: flags.limit } });
     if (flags.json) return printJson(res);
     const rows = asList(res);
     table(["ID", "TITLE", "STATUS", "WHEN", "URL"], rows.map(meetRow));
@@ -29,7 +30,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "get") {
     const id = args[0] || fatal("Usage: whissle meetings get <id>");
-    const m = await get(`/api/meetings/${id}`);
+    const m = await get(EP.meetings.get(id));
     if (flags.json) return printJson(m);
     kv(m, ["id", "title", "status", "mode", "provider", "meeting_url", "agent_id", "scheduled_for", "joined_at", "ended_at", "call_id", "created_at"]);
     return;
@@ -46,7 +47,7 @@ export async function run(sub, args, flags) {
     if (flags.url) body.meeting_url = flags.url;
     if (flags.agent) body.agent_id = flags.agent;
     if (flags.title) body.title = flags.title;
-    const m = await post("/api/meetings", body);
+    const m = await post(EP.meetings.create, body);
     if (flags.json) return printJson(m);
     ok(`Notetaker queued ${m.id} — ${m.title || m.meeting_url} (${m.status})`);
     return;
@@ -54,7 +55,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "cancel") {
     const id = args[0] || fatal("Usage: whissle meetings cancel <id>");
-    const res = await post(`/api/meetings/${id}/cancel`, {});
+    const res = await post(EP.meetings.cancel(id), {});
     if (flags.json) return printJson(res);
     ok(`Cancelled meeting ${id}`);
     return;

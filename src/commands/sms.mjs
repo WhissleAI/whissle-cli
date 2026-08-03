@@ -6,14 +6,14 @@
 //
 // Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { get, del, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const base = `/api/orgs/${org}/sms`;
 
   if (!sub || sub === "messages") {
-    const rows = await get(`${base}/messages`, { query: { limit: flags.limit } });
+    const rows = await get(EP.sms.messages(org), { query: { limit: flags.limit } });
     if (flags.json) return printJson(rows);
     table(
       ["WHEN", "TO", "STATUS", "BODY"],
@@ -29,7 +29,7 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "opt-outs") {
-    const rows = await get(`${base}/opt-outs`);
+    const rows = await get(EP.sms.optOuts(org));
     if (flags.json) return printJson(rows);
     table(
       ["PHONE", "REASON", "WHEN"],
@@ -40,7 +40,7 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "consents") {
-    const rows = await get(`${base}/consents`, { query: { limit: flags.limit } });
+    const rows = await get(EP.sms.consents(org), { query: { limit: flags.limit } });
     if (flags.json) return printJson(rows);
     table(
       ["PHONE", "SOURCE", "WHEN"],
@@ -56,7 +56,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "opt-in") {
     const phone = args[0] || fatal("Usage: whissle sms opt-in <+1…>   (re-enable messaging for a suppressed number)");
-    await del(`${base}/opt-outs/${encodeURIComponent(phone)}`);
+    await del(EP.sms.optOut(org, encodeURIComponent(phone)));
     ok(`Re-enabled messaging for ${phone}`);
     return;
   }

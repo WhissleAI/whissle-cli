@@ -5,6 +5,7 @@
 // This is the "Add integration" surface shipped in the studio, exposed for scripting.
 // Org-scoped: /api/orgs/{org}/integrations.
 import { get, post, del, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 // The list endpoint returns a bare array (or {integrations:[…]} defensively).
@@ -19,10 +20,9 @@ const intRow = (i) => [
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const base = `/api/orgs/${org}/integrations`;
 
   if (sub === "catalog") {
-    const res = await get(`${base}/catalog`);
+    const res = await get(EP.integrations.catalog(org));
     if (flags.json) return printJson(res);
     const providers = res?.providers || [];
     table(
@@ -39,7 +39,7 @@ export async function run(sub, args, flags) {
   }
 
   if (!sub || sub === "list") {
-    const res = await get(base);
+    const res = await get(EP.integrations.list(org));
     if (flags.json) return printJson(res);
     const rows = asList(res);
     table(["ID", "NAME", "PROVIDER", "STATUS", "AUTH"], rows.map(intRow));
@@ -65,7 +65,7 @@ export async function run(sub, args, flags) {
     if (flags.token) body.token = flags.token;
     if (flags.header) body.header = flags.header;
     if (flags.prefix) body.prefix = flags.prefix;
-    const res = await post(base, body);
+    const res = await post(EP.integrations.add(org), body);
     if (flags.json) return printJson(res);
     const integ = res?.integration || res || {};
     ok(`Added integration ${integ.id || ""} — ${integ.name || flags.name}`);
@@ -86,18 +86,18 @@ export async function run(sub, args, flags) {
     let oauth = flags.oauth;
     if (!oauth) {
       // Auto-detect: an oauth integration needs the redirect flow, not /connect.
-      const match = asList(await get(base)).find((i) => i.id === id);
+      const match = asList(await get(EP.integrations.list(org))).find((i) => i.id === id);
       if (match && (match.auth_mode || "").toLowerCase() === "oauth") oauth = true;
     }
     if (oauth) {
-      const res = await post(`${base}/${id}/oauth/start`, {});
+      const res = await post(EP.integrations.oauthStart(org, id), {});
       if (flags.json) return printJson(res);
       ok("Open this URL in your browser to authenticate:");
       out("\n  " + (res?.authorize_url || dim("(no URL returned)")));
       out(dim("\n  After you approve, the integration connects automatically."));
       return;
     }
-    const res = await post(`${base}/${id}/connect`, {});
+    const res = await post(EP.integrations.connect(org, id), {});
     if (flags.json) return printJson(res);
     const status = res?.status || "unknown";
     if (status === "connected") ok(`Connected — ${(res?.tool_manifest || res?.tools || []).length} tool(s) discovered`);
@@ -108,7 +108,7 @@ export async function run(sub, args, flags) {
   if (sub === "attach") {
     const id = args[0] || fatal("Usage: whissle integrations attach <id> --agent <agent-id>");
     if (!flags.agent) fatal("--agent <agent-id> is required.");
-    await post(`${base}/${id}/attach`, { agent_id: flags.agent });
+    await post(EP.integrations.attach(org, id), { agent_id: flags.agent });
     ok(`Attached integration ${id} → agent ${flags.agent} (its tools are now available)`);
     return;
   }
@@ -116,14 +116,14 @@ export async function run(sub, args, flags) {
   if (sub === "detach") {
     const id = args[0] || fatal("Usage: whissle integrations detach <id> --agent <agent-id>");
     if (!flags.agent) fatal("--agent <agent-id> is required.");
-    await post(`${base}/${id}/detach`, { agent_id: flags.agent });
+    await post(EP.integrations.detach(org, id), { agent_id: flags.agent });
     ok(`Detached integration ${id} from agent ${flags.agent}`);
     return;
   }
 
   if (sub === "remove") {
     const id = args[0] || fatal("Usage: whissle integrations remove <id>");
-    await del(`${base}/${id}`);
+    await del(EP.integrations.remove(org, id));
     ok(`Removed integration ${id}`);
     return;
   }

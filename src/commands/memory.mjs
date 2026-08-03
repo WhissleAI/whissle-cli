@@ -6,15 +6,15 @@
 //
 // Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { get, post, del, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const base = `/api/orgs/${org}/memory`;
 
   if (!sub || sub === "list") {
     // status=active is the Brain; status=proposed is the unconfirmed queue.
-    const rows = await get(base, { query: { status: flags.status } });
+    const rows = await get(EP.memory.list(org), { query: { status: flags.status } });
     if (flags.json) return printJson(rows);
     table(
       ["ID", "KIND", "STATUS", "CONTENT"],
@@ -26,7 +26,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "add") {
     if (!flags.text) fatal('Usage: whissle memory add --text "We close on federal holidays." [--kind fact]');
-    const m = await post(base, { content: flags.text, kind: flags.kind || "fact" });
+    const m = await post(EP.memory.add(org), { content: flags.text, kind: flags.kind || "fact" });
     if (flags.json) return printJson(m);
     ok(`Added to the Company Brain: ${m.id}`);
     return;
@@ -34,7 +34,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "confirm") {
     const id = args[0] || fatal("Usage: whissle memory confirm <id>   (promote a proposed fact into the active Brain)");
-    const res = await post(`${base}/${id}/confirm`, {});
+    const res = await post(EP.memory.confirm(org, id), {});
     if (flags.json) return printJson(res);
     ok(`Confirmed ${id} — now grounding every agent`);
     return;
@@ -42,7 +42,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle memory delete <id>");
-    await del(`${base}/${id}`);
+    await del(EP.memory.del(org, id));
     ok(`Deleted memory ${id}`);
     return;
   }

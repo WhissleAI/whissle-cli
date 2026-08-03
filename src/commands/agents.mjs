@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { get, post, patch, del, upload } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, err, ok, table, kv, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 // Fields that go in the create body vs. a follow-up PATCH (audio/config are
@@ -47,14 +48,14 @@ async function ingestKnowledge(agentId, knowledge, baseDir, quiet) {
   for (const item of knowledge || []) {
     try {
       if (item.url) {
-        await post(`/api/agents/${agentId}/kb/from-url`, { url: item.url });
+        await post(EP.agents.kb.fromUrl(agentId), { url: item.url });
       } else if (item.file) {
-        await upload(`/api/agents/${agentId}/kb/upload`, {
+        await upload(EP.agents.kb.upload(agentId), {
           filePath: resolve(baseDir, item.file),
           fields: { title: item.title },
         });
       } else if (item.text) {
-        await post(`/api/agents/${agentId}/kb`, {
+        await post(EP.agents.kb.base(agentId), {
           title: item.title || "Snippet", content: item.text, source_type: "snippet",
         });
       } else {
@@ -80,12 +81,12 @@ export async function createFromSpec(spec, baseDir, flags) {
   const createBody = pick(spec, CREATE_FIELDS);
   if (createBody.tools) createBody.tools = normalizeTools(createBody.tools);
 
-  const agent = await post("/api/agents", createBody);
+  const agent = await post(EP.agents.create, createBody);
   if (!quiet) ok(`Created agent ${agent.id} — ${agent.name}`);
 
   const patchBody = pick(spec, PATCH_FIELDS);
   if (Object.keys(patchBody).length) {
-    await patch(`/api/agents/${agent.id}`, patchBody);
+    await patch(EP.agents.update(agent.id), patchBody);
     if (!quiet) out(dim("    · applied audio/config settings"));
   }
 
@@ -99,7 +100,7 @@ export async function createFromSpec(spec, baseDir, flags) {
 
 export async function run(sub, args, flags) {
   if (!sub || sub === "list") {
-    const agents = await get("/api/agents");
+    const agents = await get(EP.agents.list);
     if (flags.json) return printJson(agents);
     table(
       ["ID", "NAME", "TYPE", "DIR"],
@@ -111,7 +112,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "get") {
     const id = args[0] || fatal("Usage: whissle agents get <agent-id>");
-    const a = await get(`/api/agents/${id}`);
+    const a = await get(EP.agents.get(id));
     if (flags.json) return printJson(a);
     kv(a, ["id", "name", "agent_type", "direction", "greeting", "voice", "voice_gender", "language_mode", "ambient_scene", "audio_inline_sounds", "video_enabled"]);
     out("\n  " + dim("system_prompt:"));
@@ -132,7 +133,7 @@ export async function run(sub, args, flags) {
     if (!body.name || !body.system_prompt) {
       fatal("create needs --name and --prompt (or --file agent.json with name + system_prompt).");
     }
-    const a = await post("/api/agents", body);
+    const a = await post(EP.agents.create, body);
     if (flags.json) return printJson(a);
     ok(`Created agent ${a.id} — ${a.name}`);
     out(dim("  Test it: ") + `whissle chat ${a.id}`);
@@ -145,7 +146,7 @@ export async function run(sub, args, flags) {
       ? pick(JSON.parse(readFileSync(flags.file, "utf8")), [...CREATE_FIELDS, ...PATCH_FIELDS])
       : bodyFromFlags(flags);
     if (body.tools) body.tools = normalizeTools(body.tools);
-    const a = await patch(`/api/agents/${id}`, body);
+    const a = await patch(EP.agents.update(id), body);
     if (flags.json) return printJson(a);
     ok(`Updated agent ${id}`);
     return;
@@ -154,7 +155,7 @@ export async function run(sub, args, flags) {
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle agents delete <agent-id> [--force]");
     try {
-      await del(`/api/agents/${id}`, { query: { confirm: flags.force ? "true" : undefined } });
+      await del(EP.agents.del(id), { query: { confirm: flags.force ? "true" : undefined } });
     } catch (e) {
       if (e.status === 409 && !flags.force) {
         fatal(`${e.message}\n  Re-run with --force to delete the agent and its knowledge.`);

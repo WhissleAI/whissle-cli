@@ -4,14 +4,14 @@
 // over a rolling window (--days) or an explicit --since/--until range. `options`
 // lists the valid metric/dimension keys; `charts` lists saved dashboard charts.
 import { get, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, kv, dim, printJson, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const base = `/api/orgs/${org}/analytics`;
 
   if (!sub || sub === "query") {
-    const res = await get(`${base}/query`, {
+    const res = await get(EP.analytics.query(org), {
       query: {
         metric: flags.metric,        // count | avg_duration_sec | success_rate | pickup_rate | total_duration_sec
         group_by: flags["group-by"], // day | week | month | direction | status | sentiment | intent | disposition | agent_type
@@ -29,7 +29,7 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "options") {
-    const res = await get(`${base}/options`);
+    const res = await get(EP.analytics.options(org));
     if (flags.json) return printJson(res);
     kv(
       { metrics: (res.metrics || []).join(", "), dimensions: (res.dimensions || []).join(", "), chart_types: (res.chart_types || []).join(", ") },
@@ -39,7 +39,7 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "charts") {
-    const res = await get(`${base}/charts`, { query: { agent_id: flags.agent } });
+    const res = await get(EP.analytics.charts(org), { query: { agent_id: flags.agent } });
     if (flags.json) return printJson(res);
     const rows = Array.isArray(res) ? res : res?.charts || [];
     table(

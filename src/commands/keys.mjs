@@ -4,16 +4,16 @@
 // workspace (this CLI + server-side calls); a `wpk_` publishable key runs a browser
 // voice embed. The full secret is shown exactly ONCE at creation — copy it then.
 import { get, post, del, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, kv, table, trunc, dim, brand, bold, printJson, fatal } from "../ui.mjs";
 
 const asList = (r) => (Array.isArray(r) ? r : r?.keys || []);
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const base = `/api/orgs/${org}/api-keys`;
 
   if (!sub || sub === "list") {
-    const res = await get(base);
+    const res = await get(EP.keys.list(org));
     if (flags.json) return printJson(res);
     const rows = asList(res);
     table(
@@ -41,7 +41,7 @@ export async function run(sub, args, flags) {
     const body = { name: flags.name, type: flags.publishable ? "publishable" : "secret" };
     if (flags.scopes) body.scopes = String(flags.scopes).split(",").map((s) => s.trim()).filter(Boolean);
     if (flags.origins) body.allowed_origins = String(flags.origins).split(",").map((s) => s.trim()).filter(Boolean);
-    const key = await post(base, body);
+    const key = await post(EP.keys.create(org), body);
     if (flags.json) return printJson(key);
     ok(`Created ${key.type || body.type} key ${key.id} — ${key.name}`);
     out("");
@@ -52,7 +52,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "reveal") {
     const id = args[0] || fatal("Usage: whissle keys reveal <id>");
-    const res = await get(`${base}/${id}/reveal`);
+    const res = await get(EP.keys.reveal(org, id));
     if (flags.json) return printJson(res);
     out("  " + brand(res?.secret || dim("—")));
     return;
@@ -60,7 +60,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle keys delete <id>");
-    await del(`${base}/${id}`);
+    await del(EP.keys.del(org, id));
     ok(`Revoked key ${id}`);
     return;
   }
