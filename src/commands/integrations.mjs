@@ -26,12 +26,13 @@ export async function run(sub, args, flags) {
     if (flags.json) return printJson(res);
     const providers = res?.providers || [];
     table(
-      ["PROVIDER", "NAME", "AUTH", "URL"],
+      ["PROVIDER", "NAME", "CATEGORY", "AUTH", "URL"],
       providers.map((p) => [
         p.provider || p.id || "—",
-        trunc(p.name || "—", 22),
+        trunc(p.label || p.name || "—", 20),
+        trunc(p.category || "—", 16),
         p.auth_mode || (p.oauth ? "oauth" : "—"),
-        trunc(p.server_url || p.url || "", 36),
+        trunc(p.server_url || p.url || "", 32),
       ]),
     );
     out(dim(`\n  ${providers.length} curated provider(s) · OAuth ${res?.oauth_available ? "available" : "not configured"}`));
