@@ -2,7 +2,7 @@
 //
 // Precedence (highest first): CLI flags → environment → ~/.whissle/config.json →
 // built-in defaults. The API key is a workspace SECRET key (wsk_…) created in
-// Settings → API keys on platform.whissle.ai. It is stored locally in
+// Settings → API keys on whissle.ai. It is stored locally in
 // ~/.whissle/config.json with 0600 perms — treat it like an SSH key.
 
 import { homedir } from "node:os";
@@ -35,13 +35,21 @@ export function saveConfig(patch) {
   return next;
 }
 
+// The retired GCP gateway. Older installs persisted it in ~/.whissle/config.json
+// and would keep hitting a dead host after the AWS cutover — auto-migrate it.
+const RETIRED_HOST = /\/\/gateway-backend\.whissle\.ai\b/;
+
 /** The effective config, applying env overrides over the stored file. */
 export function loadConfig() {
   const file = readFile();
+  const fromEnv = !!process.env.WHISSLE_BASE_URL;
+  let baseUrl = process.env.WHISSLE_BASE_URL || file.baseUrl || DEFAULT_BASE_URL;
+  // Rewrite a stored retired-host baseUrl to the current default (never overrides
+  // an explicit WHISSLE_BASE_URL — that stays your escape hatch).
+  if (!fromEnv && RETIRED_HOST.test(baseUrl)) baseUrl = DEFAULT_BASE_URL;
   return {
     apiKey: process.env.WHISSLE_API_KEY || file.apiKey || null,
-    baseUrl:
-      (process.env.WHISSLE_BASE_URL || file.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, ""),
+    baseUrl: baseUrl.replace(/\/+$/, ""),
     // Cached org id (resolved from the key on first use) to save a round-trip.
     orgId: file.orgId || null,
   };
