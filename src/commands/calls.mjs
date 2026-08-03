@@ -3,6 +3,7 @@
 // for your own evaluation, QA and logs. Requires a key with `calls:read`.
 import { writeFileSync, readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal } from "../ui.mjs";
 
 // ── dynamic variables ────────────────────────────────────────────────────────
@@ -74,7 +75,7 @@ export async function run(sub, args, flags) {
     // Place an OUTBOUND call from an agent to a phone number (deducts credits).
     if (!flags.agent || !flags.to) fatal("Usage: whissle calls start --agent <agent-id> --to <+1…> [--from <+1…>] [--var key=value ...] [--vars-file vars.json] [--customer <id>]");
     const variables = collectVariables(flags);
-    const res = await post("/api/calls/start", {
+    const res = await post(EP.calls.start, {
       agent_id: flags.agent, to_number: flags.to,
       ...(flags.from ? { from_number: flags.from } : {}),
       ...(flags.customer ? { customer_id: flags.customer } : {}),
@@ -122,7 +123,7 @@ export async function run(sub, args, flags) {
     const results = await mapLimit(jobs, conc, async (job, i) => {
       if (delay && i) await new Promise((r) => setTimeout(r, delay));
       try {
-        const res = await post("/api/calls/start", {
+        const res = await post(EP.calls.start, {
           agent_id: agent, to_number: job.to,
           ...(flags.from ? { from_number: flags.from } : {}),
           ...(Object.keys(job.variables).length ? { variables: job.variables } : {}),
@@ -143,7 +144,7 @@ export async function run(sub, args, flags) {
   }
 
   if (!sub || sub === "list") {
-    const calls = await get("/api/calls", {
+    const calls = await get(EP.calls.list, {
       query: { agent_id: flags.agent, limit: flags.limit || 25, status: flags.status },
     });
     if (flags.json) return printJson(calls);
@@ -163,7 +164,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "get") {
     const id = args[0] || fatal("Usage: whissle calls get <call-id>");
-    const call = await get(`/api/calls/${id}`);
+    const call = await get(EP.calls.get(id));
     if (flags.json) return printJson(call);
     kv(call, ["id", "agent_name", "status", "direction", "duration_sec", "to_number", "created_at", "ended_at"]);
     const m = call.metadata || {};
@@ -174,7 +175,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "transcript") {
     const id = args[0] || fatal("Usage: whissle calls transcript <call-id>");
-    const call = await get(`/api/calls/${id}`);
+    const call = await get(EP.calls.get(id));
     if (flags.json) return printJson({ id: call.id, transcript: turnsOf(call) });
     renderTranscript(call);
     return;
@@ -182,7 +183,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "audio") {
     const id = args[0] || fatal("Usage: whissle calls audio <call-id>");
-    const r = await get(`/api/calls/${id}/audio/url`);
+    const r = await get(EP.calls.audioUrl(id));
     if (flags.json) return printJson(r);
     out(r.url || dim("(no recording available)"));
     return;
@@ -191,7 +192,7 @@ export async function run(sub, args, flags) {
   if (sub === "export") {
     // Bulk-pull calls + transcripts for offline evaluation. JSONL (default) or CSV.
     const fmt = (flags.format || "jsonl").toLowerCase();
-    const list = await get("/api/calls", { query: { agent_id: flags.agent, limit: flags.limit || 1000, status: flags.status } });
+    const list = await get(EP.calls.list, { query: { agent_id: flags.agent, limit: flags.limit || 1000, status: flags.status } });
     let calls = list || [];
     if (flags.since) calls = calls.filter((c) => (c.created_at || "") >= flags.since);
 
@@ -200,7 +201,7 @@ export async function run(sub, args, flags) {
       const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
       const rows = [["id", "agent", "status", "duration_sec", "created_at", "disposition", "turns"]];
       for (const c of calls) {
-        const full = await get(`/api/calls/${c.id}`).catch(() => c);
+        const full = await get(EP.calls.get(c.id)).catch(() => c);
         rows.push([
           c.id, c.agent_name || c.agent_id, c.status, c.duration_sec, c.created_at,
           (full.metadata || {}).disposition || "", turnsOf(full).length,
@@ -210,7 +211,7 @@ export async function run(sub, args, flags) {
     } else {
       const lines = [];
       for (const c of calls) {
-        const full = await get(`/api/calls/${c.id}`).catch(() => c);
+        const full = await get(EP.calls.get(c.id)).catch(() => c);
         lines.push(JSON.stringify({
           id: c.id, agent: c.agent_name || c.agent_id, status: c.status,
           duration_sec: c.duration_sec, created_at: c.created_at,

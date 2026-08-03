@@ -7,23 +7,23 @@
 // Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { readFileSync } from "node:fs";
 import { get, post, put, del, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, kv, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
-  const base = `/api/orgs/${org}/appointments`;
   const q = { agent_id: flags.agent };
 
   if (!sub || sub === "list") {
     // GET "" returns the booking SETTINGS (there is no per-appointment list here).
-    const res = await get(base, { query: q });
+    const res = await get(EP.appointments.settings(org), { query: q });
     if (flags.json) return printJson(res);
     kv(res, Object.keys(res || {}));
     return;
   }
 
   if (sub === "hours") {
-    const rows = await get(`${base}/hours`, { query: q });
+    const rows = await get(EP.appointments.hours(org), { query: q });
     if (flags.json) return printJson(rows);
     table(
       ["DAY", "OPEN", "CLOSE", "ENABLED"],
@@ -41,14 +41,14 @@ export async function run(sub, args, flags) {
     if (!flags.file) fatal('Usage: whissle appointments set-hours --file hours.json [--agent <id>]\n  hours.json: {"hours":[{"day_of_week":1,"open_time":"09:00","close_time":"17:00"}]} (or a bare array)');
     const parsed = JSON.parse(readFileSync(flags.file, "utf8"));
     const body = Array.isArray(parsed) ? { hours: parsed } : parsed;
-    const res = await put(`${base}/hours`, body, { query: q });
+    const res = await put(EP.appointments.hours(org), body, { query: q });
     if (flags.json) return printJson(res);
     ok(`Set business hours (${(res || []).length} day rows)`);
     return;
   }
 
   if (sub === "blocked") {
-    const rows = await get(`${base}/blocked-dates`, { query: q });
+    const rows = await get(EP.appointments.blockedDates(org), { query: q });
     if (flags.json) return printJson(rows);
     table(
       ["ID", "DATE", "REASON"],
@@ -60,7 +60,7 @@ export async function run(sub, args, flags) {
 
   if (sub === "block") {
     if (!flags.date) fatal("Usage: whissle appointments block --date YYYY-MM-DD [--reason r] [--agent <id>]");
-    const res = await post(`${base}/blocked-dates`, { blocked_date: flags.date, reason: flags.reason }, { query: q });
+    const res = await post(EP.appointments.blockedDates(org), { blocked_date: flags.date, reason: flags.reason }, { query: q });
     if (flags.json) return printJson(res);
     ok(`Blocked ${flags.date}` + (res?.id ? ` (${res.id})` : ""));
     return;
@@ -68,13 +68,13 @@ export async function run(sub, args, flags) {
 
   if (sub === "unblock") {
     const id = args[0] || fatal("Usage: whissle appointments unblock <blocked-id> [--agent <id>]");
-    await del(`${base}/blocked-dates/${id}`, { query: q });
+    await del(EP.appointments.blockedDate(org, id), { query: q });
     ok(`Unblocked ${id}`);
     return;
   }
 
   if (sub === "calendar") {
-    const res = await get(`${base}/calendar`, { query: q });
+    const res = await get(EP.appointments.calendar(org), { query: q });
     if (flags.json) return printJson(res);
     kv(res, Object.keys(res || {}));
     return;

@@ -8,6 +8,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { loadConfig, saveConfig } from "./config.mjs";
+import { EP } from "./endpoints.mjs";
 
 export class ApiError extends Error {
   constructor(status, message, body) {
@@ -115,5 +116,5 @@ export async function resolveOrgId(cfg = loadConfig()) {
 
 /** The caller's workspace + role for this key (GET /api/whoami). */
 export async function whoami(cfg = loadConfig()) {
-  return get("/api/whoami", { cfg });
+  return get(EP.whoami, { cfg });
 }

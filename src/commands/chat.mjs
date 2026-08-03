@@ -3,6 +3,7 @@
 // terminal-native way to test/drive an agent's brain + tools.)
 import { createInterface } from "node:readline";
 import { get, post } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, err, ok, md, dim, brand, bold, spinner, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
@@ -10,13 +11,13 @@ export async function run(sub, args, flags) {
   const agentId = sub;
   if (!agentId) fatal("Usage: whissle chat <agent-id>   (find ids with `whissle agents list`)");
 
-  const agent = await get(`/api/agents/${agentId}`).catch(() => null);
+  const agent = await get(EP.agents.get(agentId)).catch(() => null);
   if (!agent) fatal(`Agent ${agentId} not found in this workspace.`);
 
   // One-shot mode: `whissle chat <id> -m "message"` (scriptable).
   if (flags.m || flags.message) {
     const stop = spinner("thinking…");
-    const r = await post(`/api/agents/${agentId}/chat/turn`, { message: flags.m || flags.message });
+    const r = await post(EP.agents.chatTurn(agentId), { message: flags.m || flags.message });
     stop();
     if (flags.json) return out(JSON.stringify(r, null, 2));
     return out(md(r.reply));
@@ -45,7 +46,7 @@ export async function run(sub, args, flags) {
     rl.pause();
     const stop = spinner("thinking…");
     try {
-      const r = await post(`/api/agents/${agentId}/chat/turn`, {
+      const r = await post(EP.agents.chatTurn(agentId), {
         message: text,
         ...(conversationId ? { conversation_id: conversationId } : {}),
       });

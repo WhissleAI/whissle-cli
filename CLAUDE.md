@@ -30,8 +30,12 @@ node bin/whissle.mjs help
 ```
 bin/whissle.mjs        entry — arg/flag parse, group dispatch, help, error handling
 src/config.mjs         ~/.whissle/config.json (0600) + env overrides (WHISSLE_API_KEY, WHISSLE_BASE_URL)
-src/api.mjs            gateway REST client — bearer auth, JSON/multipart/raw, error surfacing, resolveOrgId().
-                       Self-contained (no CLI imports) so it can become @whissle/sdk. THE place to add endpoints.
+src/api.mjs            gateway REST HTTP CLIENT — bearer auth, JSON/multipart/raw, error surfacing, resolveOrgId().
+                       Self-contained (only imports endpoints.mjs) so it can become @whissle/sdk.
+src/endpoints.mjs      SINGLE SOURCE OF TRUTH for every backend PATH the CLI calls, grouped by domain and
+                       exported as `EP`. Pure path module — no imports, no side effects. Static paths are
+                       strings; parameterized/org-scoped paths are builder fns (org id is the first arg;
+                       the command still calls resolveOrgId() and passes it in). Move a route → change it HERE.
 src/ui.mjs             chalk table/kv/json/markdown(marked-terminal)/spinner. Brand accent #e5484d.
 src/commands/
   config.mjs           login / logout / whoami / config
@@ -90,8 +94,16 @@ existed cannot be granted it and is refused — mint a fresh key to manage conne
 
 ## Adding an endpoint
 
-Add the request to a command in `src/commands/` using `get/post/patch/del/upload/raw`
-from `src/api.mjs`. If the endpoint is org-scoped, `await resolveOrgId()` first.
+Two steps, two files — never inline a `/api/…` string in a command:
+
+1. **Path** → add it to the right domain group in `src/endpoints.mjs` (`EP.*`). Static
+   path = string; parameterized/org-scoped = a builder fn (org id first). This is the
+   ONLY place API paths live.
+2. **Call** → in a `src/commands/*.mjs`, `import { EP }` and pass the path into
+   `get/post/patch/del/upload/raw` from `src/api.mjs`. If org-scoped, `await
+   resolveOrgId()` first and pass the org id into the `EP.*` builder. Query params and
+   request bodies stay in the command.
+
 Verify the request/response shape against the backend route in
 `whissle_gateway_backend/pipecat-bot/routes/`.
 

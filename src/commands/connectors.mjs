@@ -5,6 +5,7 @@
 // agents built with `whissle agents create --file …` can call the `fhir_*` tools
 // without anyone pasting secrets into a prompt. Org-scoped: /api/orgs/{org}/credentials.
 import { get, post, del, resolveOrgId } from "../api.mjs";
+import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
 // The LIST endpoint may return {credentials:[…]} or a bare array — accept both.
@@ -27,7 +28,7 @@ export async function run(sub, args, flags) {
   const org = await resolveOrgId();
 
   if (!sub || sub === "list") {
-    const res = await get(`/api/orgs/${org}/credentials`, {
+    const res = await get(EP.connectors.list(org), {
       query: { kind: flags.kind || undefined },
     });
     if (flags.json) return printJson(res);
@@ -54,7 +55,7 @@ export async function run(sub, args, flags) {
       );
     }
     const config = flags.config ? JSON.parse(flags.config) : configFromFlags(flags);
-    const created = await post(`/api/orgs/${org}/credentials`, {
+    const created = await post(EP.connectors.create(org), {
       kind: flags.kind,
       name: flags.name,
       config,
@@ -70,7 +71,7 @@ export async function run(sub, args, flags) {
   if (sub === "remove") {
     const id = args[0] || fatal("Usage: whissle connectors remove <id> [--force]");
     try {
-      await del(`/api/orgs/${org}/credentials/${id}`, {
+      await del(EP.connectors.del(org, id), {
         query: { confirm: flags.force ? "true" : undefined },
       });
     } catch (e) {
