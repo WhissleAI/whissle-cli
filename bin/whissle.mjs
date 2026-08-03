@@ -31,8 +31,11 @@ function parse(tokens) {
     if (t.startsWith("--")) {
       const key = t.slice(2);
       const next = tokens[i + 1];
-      if (next === undefined || next.startsWith("-")) flags[key] = true;
-      else { flags[key] = next; i++; }
+      const val = next === undefined || next.startsWith("-") ? true : (i++, next);
+      // Repeated flags (e.g. --var k=v --var k2=v2) collect into an array; a single
+      // occurrence stays scalar, so existing scalar-flag readers are unaffected.
+      if (key in flags) flags[key] = [].concat(flags[key], val);
+      else flags[key] = val;
     } else if (t === "-m") {
       flags.m = tokens[++i];
     } else {
@@ -63,6 +66,10 @@ ${bold("Run an agent")}
   ${dim("(browser voice embed → the @whissle/agents JS SDK + a publishable wpk_ key)")}
 
 ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
+  whissle calls start --agent <id> --to <+1…> [--from <+1…>]
+                      [--var key=value ...] [--vars-file vars.json]   one outbound call
+  whissle calls campaign --agent <id> --file contacts.csv [--to-col to_number]
+                      [--concurrency 3] [--delay 1000] (--dry-run | --yes)   batch calls, one per CSV row
   whissle calls list [--agent <id>] [--status s] [--limit N]
   whissle calls get <id>
   whissle calls transcript <id>

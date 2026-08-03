@@ -1,0 +1,14 @@
+{
+  "agent_id": "c508c012-28dd-495a-9b7a-80233717bf82",
+  "to_number": "+12138224814",
+  "variables": {
+    "user_first_name": "Karan",
+    "user_last_name": "Singla",
+    "user_phone_number": "+12138224814",
+    "user_email_address": "karan@whissle.ai",
+    "last_call_summary": "Seen 3 weeks ago for a lower-back strain.",
+    "patient_id": "PT-1001",
+    "need_appointment": "true",
+    "language_code": "en"
+  }
+}
