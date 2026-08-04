@@ -166,5 +166,42 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete.`);
+  if (sub === "versions") {
+    // Saved-config history, newest first — every meaningful save is snapshotted,
+    // so an overwrite is recoverable via `agents rollback`.
+    const id = args[0] || fatal("Usage: whissle agents versions <agent-id>");
+    const rows = await get(EP.agents.versions(id));
+    if (flags.json) return printJson(rows);
+    table(
+      ["VERSION", "ID", "REASON", "NAME", "PROMPT", "WHEN"],
+      (rows || []).map((v) => [
+        `v${v.version_no}`, v.id, trunc(v.reason || "—", 20), trunc(v.name || "—", 24),
+        `${v.prompt_chars ?? 0} ch`, (v.created_at || "").slice(0, 16).replace("T", " "),
+      ]),
+    );
+    out(dim(`\n  ${(rows || []).length} version(s)  ·  restore one: whissle agents rollback ${id} <version-id>`));
+    return;
+  }
+
+  if (sub === "rollback") {
+    const id = args[0];
+    const vid = args[1];
+    if (!id || !vid) fatal("Usage: whissle agents rollback <agent-id> <version-id>   (version ids: whissle agents versions <agent-id>)");
+    const a = await post(EP.agents.rollback(id, vid));
+    if (flags.json) return printJson(a);
+    ok(`Rolled back agent ${id} — now "${a.name}"`);
+    out(dim("  Content only: deployment/routing (number, embed) is untouched, and the restore itself is snapshotted."));
+    return;
+  }
+
+  if (sub === "clone") {
+    const id = args[0] || fatal("Usage: whissle agents clone <agent-id>");
+    const a = await post(EP.agents.clone(id));
+    if (flags.json) return printJson(a);
+    ok(`Cloned agent ${id} → ${a.id} — ${a.name}`);
+    out(dim("  The copy starts undeployed (no number, embed off). Test it: ") + `whissle chat ${a.id}`);
+    return;
+  }
+
+  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone.`);
 }

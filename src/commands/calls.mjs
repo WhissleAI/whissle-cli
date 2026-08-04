@@ -1,10 +1,43 @@
-// whissle calls list|get|transcript|audio|export
+// whissle calls list|get|result|transcript|audio|export
 // The programmatic records surface: pull your calls, transcripts and recordings
 // for your own evaluation, QA and logs. Requires a key with `calls:read`.
 import { writeFileSync, readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal, spinner } from "../ui.mjs";
+
+// ── result polling ───────────────────────────────────────────────────────────
+// A session has a final result (or never will) once `ready` flips true or the
+// status is terminal — mirrors the backend's partner_result.TERMINAL_STATUSES,
+// so a failed call stops the poller instead of hanging it forever.
+const TERMINAL_STATUSES = new Set([
+  "completed", "ended", "failed", "no-answer", "busy", "canceled", "cancelled",
+]);
+
+/** Pure poll decision: should `calls result --wait` stop polling? */
+export function isTerminal(status, ready) {
+  return ready === true || TERMINAL_STATUSES.has(String(status || "").toLowerCase());
+}
+
+function renderResult(r) {
+  kv(r, ["session_id", "status", "ready", "direction", "duration_sec", "started_at", "ended_at", "disposition"]);
+  const res = r.result;
+  if (res && typeof res === "object") {
+    const summary = res.summary || res.session_summary || res.notes;
+    if (typeof summary === "string" && summary.trim()) {
+      out("\n  " + dim("summary:") + "\n  " + md(summary).replace(/\n/g, "\n  "));
+    }
+    if (res.scores && typeof res.scores === "object") {
+      out("\n  " + dim("scores:"));
+      kv(res.scores);
+    }
+    const shown = new Set(["summary", "session_summary", "notes", "scores", "disposition"]);
+    const rest = Object.keys(res).filter((k) => !shown.has(k));
+    if (rest.length) out(dim(`\n  more in the structured result (${rest.join(", ")}) — use --json`));
+  } else if (!r.ready) {
+    out(dim("\n  (not finalized yet — re-run with --wait to poll until it is)"));
+  }
+}
 
 // ── dynamic variables ────────────────────────────────────────────────────────
 // A call's dynamic variables resolve {{placeholders}} in the agent's prompt. Two
@@ -173,6 +206,36 @@ export async function run(sub, args, flags) {
     return;
   }
 
+  if (sub === "result") {
+    // The partner "get outcome" op: the structured result envelope for one call —
+    // disposition + the scorer's full evaluation once the session finalizes.
+    // --wait turns it into a poller (the pull half of the results contract).
+    const id = args[0] || fatal("Usage: whissle calls result <call-id> [--wait] [--interval 5] [--timeout 300]");
+    const intervalMs = Math.max(1, parseInt(flags.interval || "5", 10) || 5) * 1000;
+    const timeoutMs = Math.max(1, parseInt(flags.timeout || "300", 10) || 300) * 1000;
+
+    let r = await get(EP.calls.result(id));
+    if (flags.wait && !isTerminal(r.status, r.ready)) {
+      const deadline = Date.now() + timeoutMs;
+      const stop = spinner(`waiting for call ${id} to finalize…`);
+      try {
+        while (!isTerminal(r.status, r.ready)) {
+          if (Date.now() >= deadline) {
+            stop();
+            fatal(`Timed out after ${Math.round(timeoutMs / 1000)}s — call ${id} is still "${r.status || "unknown"}". Re-run with a larger --timeout, or check it: whissle calls get ${id}`);
+          }
+          await new Promise((res) => setTimeout(res, Math.min(intervalMs, deadline - Date.now())));
+          r = await get(EP.calls.result(id));
+        }
+      } finally {
+        stop();
+      }
+    }
+    if (flags.json) return printJson(r);
+    renderResult(r);
+    return;
+  }
+
   if (sub === "transcript") {
     const id = args[0] || fatal("Usage: whissle calls transcript <call-id>");
     const call = await get(EP.calls.get(id));
@@ -230,5 +293,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: calls ${sub}. Try start | campaign | list | get | transcript | audio | export.`);
+  fatal(`Unknown: calls ${sub}. Try start | campaign | list | get | result | transcript | audio | export.`);
 }

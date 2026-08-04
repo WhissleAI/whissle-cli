@@ -68,6 +68,9 @@ whissle agents create --file agent.json          # full package: agent + audio/c
 whissle agents get <id>
 whissle agents update <id> --prompt "…"
 whissle agents delete <id> [--force]
+whissle agents versions <id>                      # saved-config history (every save is snapshotted)
+whissle agents rollback <id> <version-id>         # restore that version's content; deployment untouched
+whissle agents clone <id>                         # duplicate as an undeployed draft ("<name> (copy)")
 whissle chat <agent-id>                           # interactive text turn
 whissle chat <agent-id> -m "what are your hours?" # one-shot
 ```
@@ -81,12 +84,47 @@ whissle calls campaign --agent <id> --file contacts.csv --to-col to_number \
   --concurrency 3 --delay 1000 (--dry-run | --yes)          # one call per CSV row; each column → a variable
 whissle calls list --agent <id> --limit 50
 whissle calls get <call-id>                       # status, disposition, summary
+whissle calls result <call-id>                    # the structured outcome envelope (ready, disposition, result)
+whissle calls result <call-id> --wait             # poll until the session finalizes (or a terminal status)
+whissle calls result <call-id> --wait --interval 5 --timeout 300 --json | jq .disposition
 whissle calls transcript <call-id>
 whissle calls audio <call-id>                     # signed recording URL
 whissle calls export --agent <id> --since 2026-07-01 --format jsonl|csv --out calls.jsonl
 ```
 `campaign` places **real, billed** calls — it refuses without `--dry-run`
 (preview) or `--yes`. See `examples/campaigns/`.
+
+`result` is the partner **"get outcome"** op: after a call you (or your
+integration — the n8n node mirrors it) poll `whissle calls result <id> --wait`
+until `ready: true`, then read the disposition and the scorer's full structured
+result. `--wait` exits non-zero on timeout, so it's safe to gate a script on.
+
+### Action inbox (human-in-the-loop approvals)
+```bash
+whissle actions list [--status pending|approved|rejected|auto_executed|all] [--agent <id>]
+whissle actions approve <id>                      # runs the held action (send link, book slot, …)
+whissle actions reject <id> [--reason "wrong number"]
+whissle actions scheduled                         # upcoming auto follow-up calls, soonest first
+whissle actions cancel-scheduled <id>
+```
+Sensitive post-call actions are **held as `pending`** until someone approves;
+auto-fired ones show up read-only as `auto_executed`. `list` also shows the
+pending count (the studio nav badge, from `/api/actions/count`).
+
+### Compliance (Do-Not-Call, calling rules, evidence)
+```bash
+whissle compliance suppressions                   # the org's Do-Not-Call list
+whissle compliance suppress +14155550123 --reason "asked to stop"
+whissle compliance unsuppress +14155550123
+whissle compliance settings                       # the rules the dial engine enforces
+whissle compliance settings set --window-start 9 --window-end 20 --timezone America/New_York
+whissle compliance settings set --require-consent true --disclosure-required true --retention-days 365
+whissle compliance settings set --file settings.json
+whissle compliance events --days 30               # what the rules DID (blocked dials, disclosures)
+```
+The DNC list is also written automatically by the `stop_calling` post-call tool,
+and enforcement happens **pre-dial** on the backend — this surface is the audit
+trail and the controls.
 
 ### Knowledge & custom tools
 ```bash
@@ -235,8 +273,10 @@ didn't exist when it was made.
 
 | Area | Scopes |
 |---|---|
-| agents, embed, chat | `agents:read` / `agents:write` |
-| calls, campaign (client batch) | `calls:read` / `calls:write` (start/campaign place calls) |
+| agents, embed, chat | `agents:read` / `agents:write` (versions/rollback/clone too) |
+| calls, campaign (client batch) | `calls:read` / `calls:write` (start/campaign place calls; `result` is read) |
+| **actions** (inbox) | `actions:read` / `actions:write` (approve/reject/cancel) |
+| **compliance** | `compliance:read` / `compliance:write` *(write = owner/admin)* |
 | kb | `kb:read` / `kb:write` |
 | tools | `tools:read` / `tools:write` |
 | connectors | `connectors:read` / `connectors:write` |

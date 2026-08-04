@@ -10,6 +10,8 @@ const GROUPS = {
   agents: () => import("../src/commands/agents.mjs"),
   chat: () => import("../src/commands/chat.mjs"),
   calls: () => import("../src/commands/calls.mjs"),
+  actions: () => import("../src/commands/actions.mjs"),
+  compliance: () => import("../src/commands/compliance.mjs"),
   kb: () => import("../src/commands/kb.mjs"),
   tools: () => import("../src/commands/tools.mjs"),
   connectors: () => import("../src/commands/connectors.mjs"),
@@ -69,6 +71,9 @@ ${bold("Configure agents")}
   whissle agents create --file agent.json
   whissle agents update <id> [--prompt … | --file …]
   whissle agents delete <id>
+  whissle agents versions <id>        saved-config history (every save is snapshotted)
+  whissle agents rollback <id> <version-id>   restore content; deployment untouched
+  whissle agents clone <id>           duplicate as an undeployed draft
 
 ${bold("Run an agent")}
   whissle chat <agent-id>             interactive text conversation
@@ -82,6 +87,8 @@ ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
                       [--concurrency 3] [--delay 1000] (--dry-run | --yes)   batch calls, one per CSV row
   whissle calls list [--agent <id>] [--status s] [--limit N]
   whissle calls get <id>
+  whissle calls result <id> [--wait] [--interval 5] [--timeout 300]   outcome envelope
+                      (disposition + structured result; --wait polls until finalized)
   whissle calls transcript <id>
   whissle calls audio <id>            signed recording URL
   whissle calls export [--agent <id>] [--since 2026-07-01] [--format jsonl|csv] [--out f]
@@ -123,6 +130,18 @@ ${bold("Appointments")}  ${dim("— per-agent booking config (--agent optional)"
   whissle appointments list | calendar
   whissle appointments hours | set-hours --file hours.json
   whissle appointments blocked | block --date YYYY-MM-DD | unblock <id>
+
+${bold("Action inbox")}  ${dim("(needs actions:read/write)")}  ${dim("— approve/reject held post-call actions")}
+  whissle actions list [--status pending|all] [--agent <id>]
+  whissle actions approve <id> | reject <id> [--reason r]
+  whissle actions scheduled           upcoming auto follow-up calls
+  whissle actions cancel-scheduled <id>
+
+${bold("Compliance")}  ${dim("(needs compliance:read/write)")}  ${dim("— Do-Not-Call list, calling rules, evidence")}
+  whissle compliance suppressions
+  whissle compliance suppress <+1…> [--reason r] | unsuppress <+1…>
+  whissle compliance settings | settings set [--window-start 9 --window-end 20 --timezone …]
+  whissle compliance events [--days 30]
 
 ${bold("SMS")}  ${dim("— delivery log + consent (no send; agents send SMS)")}
   whissle sms messages [--limit N] | opt-outs | consents

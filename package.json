@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node bin/whissle.mjs",
-    "whissle": "node bin/whissle.mjs"
+    "whissle": "node bin/whissle.mjs",
+    "test": "node --test \"test/*.test.mjs\""
   },
   "engines": {
     "node": ">=18"
