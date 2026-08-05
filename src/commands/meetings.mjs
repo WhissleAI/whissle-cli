@@ -2,8 +2,6 @@
 //
 // Send an agent into a Google Meet as a notetaker: it joins, transcribes, and writes
 // a summary (a bot in a meeting bills real minutes, so it needs workspace credit).
-//
-// Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
 import { EP } from "../endpoints.mjs";

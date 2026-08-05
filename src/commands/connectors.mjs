@@ -4,7 +4,8 @@
 // system (a FHIR/EHR server, an EHR OAuth app, …). Once a `fhir` connector exists,
 // agents built with `whissle agents create --file …` can call the `fhir_*` tools
 // without anyone pasting secrets into a prompt. Org-scoped: /api/orgs/{org}/credentials.
-import { get, post, del, resolveOrgId } from "../api.mjs";
+import { readFileSync } from "node:fs";
+import { get, post, patch, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
 
@@ -68,6 +69,26 @@ export async function run(sub, args, flags) {
     return;
   }
 
+  if (sub === "test") {
+    const id = args[0] || fatal("Usage: whissle connectors test <id>");
+    // A reachable-but-rejected credential returns 200 with ok:false — not an error.
+    const res = await post(EP.connectors.test(org, id));
+    if (flags.json) return printJson(res);
+    if (res.ok) ok(`Connector ${id} authenticates${res.kind ? ` (${res.kind})` : ""}`);
+    else fatal(`Connector ${id} failed the health check: ${res.detail || "rejected"}`);
+    return;
+  }
+
+  if (sub === "update") {
+    const id = args[0] || fatal("Usage: whissle connectors update <id> --file connector.json");
+    if (!flags.file) fatal("--file connector.json is required (fields: name / config / is_active).");
+    const body = JSON.parse(readFileSync(flags.file, "utf8"));
+    const updated = await patch(EP.connectors.update(org, id), body);
+    if (flags.json) return printJson(updated);
+    ok(`Updated connector ${id}`);
+    return;
+  }
+
   if (sub === "remove") {
     const id = args[0] || fatal("Usage: whissle connectors remove <id> [--force]");
     try {
@@ -87,5 +108,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: connectors ${sub}. Try list | add | remove.`);
+  fatal(`Unknown: connectors ${sub}. Try list | add | test | update | remove.`);
 }

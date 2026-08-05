@@ -3,6 +3,7 @@
 //
 // Grammar:  whissle <group> [subcommand] [positionals…] [--flags]
 // Global flags: --json (machine output), --base-url <url>, --key <wsk_…>
+import { pathToFileURL } from "node:url";
 import { ApiError } from "../src/api.mjs";
 import { err, out, brand, bold, dim } from "../src/ui.mjs";
 
@@ -35,7 +36,7 @@ const GROUPS = {
 const CONFIG_VERBS = new Set(["login", "logout", "whoami"]);
 
 /** Split tokens into { positionals, flags }. Flags: --k v, --bool, -m v. */
-function parse(tokens) {
+export function parse(tokens) {
   const positionals = [];
   const flags = {};
   for (let i = 0; i < tokens.length; i++) {
@@ -74,6 +75,15 @@ ${bold("Configure agents")}
   whissle agents versions <id>        saved-config history (every save is snapshotted)
   whissle agents rollback <id> <version-id>   restore content; deployment untouched
   whissle agents clone <id>           duplicate as an undeployed draft
+  whissle agents types                agent-type keys for --type (customer_support, …)
+
+${bold("Conversation flow")}  ${dim("— the in-call state machine (flow-based, guard-railed agents)")}
+  whissle agents flow show <id> [--json]         states / transitions / settings (+ derived views)
+  whissle agents flow set <id> --file flow.json [--draft]   author the flow (--draft stages it)
+  whissle agents flow generate <id> --goal "…"   AI-draft a starter flow (not saved)
+  whissle agents flow trace <id> --conversation <cid>   turn-by-turn step trace for one run
+  whissle agents flow publish <id>               promote the staged draft → live
+  whissle agents flow discard <id>               throw the pending draft away
 
 ${bold("Run an agent")}
   whissle chat <agent-id>             interactive text conversation
@@ -98,12 +108,16 @@ ${bold("Knowledge & tools")}
   whissle kb add <agent-id> [--text … | --file f.pdf | --url https://…]
   whissle tools list
   whissle tools create --file tool.json
+  whissle tools update <tool-id> --file tool.json
+  whissle tools delete <tool-id>
   whissle tools attach <tool-id> --agent <agent-id>
 
 ${bold("Connectors")}  ${dim("(needs connectors:read/write)")}  ${dim("— stored org credentials, e.g. FHIR/EHR")}
   whissle connectors list [--kind fhir]
   whissle connectors add --kind fhir --name "Epic Sandbox" --base-url https://fhir…/r4 \\
                          --auth client_credentials --token-url … --client-id … --client-secret …
+  whissle connectors test <id>                       health-check a stored connector
+  whissle connectors update <id> --file connector.json   ${dim("(cookie-auth today)")}
   whissle connectors remove <id> [--force]
 
 ${bold("Integrations")}  ${dim("— the MCP connector app store; enable external tools on agents")}
@@ -180,6 +194,7 @@ ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
   whissle models chat "prompt" [--system …] [--fast]
   whissle models tts "text" [--voice …] --out speech.mp3
   whissle models transcribe audio.wav [--language xx] [--diarize]
+  whissle models voices               voice ids for --voice (grouped by engine)
 
 ${bold("Billing")}
   whissle usage                       wallet balance + recent ledger
@@ -218,8 +233,14 @@ async function main() {
   await mod.run(sub, rest, flags);
 }
 
-main().catch((e) => {
-  if (e instanceof ApiError) err(brand("✗ ") + e.message);
-  else err(brand("✗ ") + (e?.stack || e?.message || String(e)));
-  process.exit(1);
-});
+// Only run the CLI when invoked directly — importing this module (e.g. from the
+// test suite, to exercise `parse`) must not kick off `main()`.
+const invokedDirectly =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) {
+  main().catch((e) => {
+    if (e instanceof ApiError) err(brand("✗ ") + e.message);
+    else err(brand("✗ ") + (e?.stack || e?.message || String(e)));
+    process.exit(1);
+  });
+}

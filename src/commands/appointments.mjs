@@ -3,8 +3,6 @@
 // An agent's booking behaviour: business hours, blocked dates, and the calendar
 // connection its book/reschedule tools use. Every subcommand takes an optional
 // --agent (the settings are per-agent; omit for the org default agent).
-//
-// Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { readFileSync } from "node:fs";
 import { get, post, put, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";

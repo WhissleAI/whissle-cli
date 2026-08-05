@@ -3,8 +3,6 @@
 // Read-only auditing plus opt-out control. There is NO send-SMS command — SMS goes
 // out through agents (post-call automation, reminders). This surface is for the
 // A2P/consent paper trail: the delivery log, suppressed numbers, and consent records.
-//
-// Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { get, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";

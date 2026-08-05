@@ -18,6 +18,9 @@ const PATCH_FIELDS = [
   "audio_ambience", "audio_humanizer_intensity", "ambient_scene", "ambient_level_db",
   "audio_inline_sounds", "tool_sounds", "disposition_tool_map", "action_policy",
   "further_action_map", "scoring_prompt",
+  // The in-call conversation flow (state machine). AgentUpdate accepts it, so a
+  // `flow` key in an agent file must survive create/update — see `agents flow`.
+  "flow",
 ];
 
 function bodyFromFlags(flags) {
@@ -37,10 +40,21 @@ function bodyFromFlags(flags) {
 const normalizeTools = (tools) =>
   (tools || []).map((t) => (typeof t === "string" ? { name: t, enabled: true } : { enabled: true, ...t }));
 
-function pick(obj, keys) {
+export function pick(obj, keys) {
   const out = {};
   for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
   return out;
+}
+
+// The fields a file-based create/update carries into the PATCH body. Exported so
+// a unit test can assert a `flow` key survives patch-building (regression guard).
+export const FILE_PATCH_FIELDS = [...CREATE_FIELDS, ...PATCH_FIELDS];
+
+// `flow set --file` accepts either a bare flow object (`{version, states, …}`) or
+// a wrapper `{flow: {...}}`; normalize to the bare flow the backend expects.
+export function unwrapFlow(parsed) {
+  if (parsed && typeof parsed === "object" && parsed.flow && !parsed.states) return parsed.flow;
+  return parsed;
 }
 
 async function ingestKnowledge(agentId, knowledge, baseDir, quiet) {
@@ -143,7 +157,7 @@ export async function run(sub, args, flags) {
   if (sub === "update") {
     const id = args[0] || fatal("Usage: whissle agents update <agent-id> [--prompt … | --file …]");
     const body = flags.file
-      ? pick(JSON.parse(readFileSync(flags.file, "utf8")), [...CREATE_FIELDS, ...PATCH_FIELDS])
+      ? pick(JSON.parse(readFileSync(flags.file, "utf8")), FILE_PATCH_FIELDS)
       : bodyFromFlags(flags);
     if (body.tools) body.tools = normalizeTools(body.tools);
     const a = await patch(EP.agents.update(id), body);
@@ -203,5 +217,160 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone.`);
+  if (sub === "types") {
+    // Discovery: the agent-type keys you can pass to `--type` / an agent file.
+    const types = await get(EP.agentTypes);
+    if (flags.json) return printJson(types);
+    table(
+      ["KEY", "LABEL", "MODALITY", "APPTS"],
+      (types || []).map((t) => [
+        t.key, trunc(t.label || t.name || "—", 32), t.modality || "—",
+        t.does_appointments ? "yes" : "—",
+      ]),
+    );
+    out(dim(`\n  ${(types || []).length} type(s)`));
+    return;
+  }
+
+  if (sub === "flow") return runFlow(args[0], args.slice(1), flags);
+
+  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone | flow | types.`);
+}
+
+// ── agents flow show|set|generate|trace|publish|discard ──────────────────────
+// The in-call conversation flow (a per-agent state machine) that drives
+// flow-based, guard-railed voice/text agents. Authoring is a PATCH of `{flow}`
+// (default live; `--draft` stages it for `flow publish`).
+
+const FLOW_USAGE =
+  "Usage: whissle agents flow <show|set|generate|trace|publish|discard> <agent-id> [opts]";
+
+function printFlow(flow) {
+  if (!flow || !Object.keys(flow).length) {
+    out(dim("  (no flow)"));
+    return;
+  }
+  const s = flow.settings || {};
+  kv(
+    {
+      version: flow.version,
+      enabled: flow.enabled,
+      start_state: flow.start_state,
+      states: (flow.states || []).length,
+      variables: (flow.variables || []).length,
+      on_guard_trip: s.on_guard_trip,
+      fallback_state: s.fallback_state,
+      max_transitions_per_call: s.max_transitions_per_call,
+      max_visits_per_state: s.max_visits_per_state,
+    },
+    ["version", "enabled", "start_state", "states", "variables",
+     "on_guard_trip", "fallback_state", "max_transitions_per_call", "max_visits_per_state"],
+  );
+  const states = flow.states || [];
+  if (states.length) {
+    out("\n  " + dim("states:"));
+    table(
+      ["ID", "TYPE", "LABEL / SAY", "TOOLS"],
+      states.map((st) => [
+        st.id, st.type || "—", trunc(st.label || st.say || "—", 44),
+        (st.allowed_tools || []).join(", ") || "—",
+      ]),
+    );
+  }
+  if (Array.isArray(flow.transitions)) out(dim(`\n  ${flow.transitions.length} transition(s)`));
+}
+
+async function runFlow(verb, args, flags) {
+  if (!verb) fatal(FLOW_USAGE);
+
+  if (verb === "show") {
+    const id = args[0] || fatal("Usage: whissle agents flow show <agent-id> [--json]");
+    const a = await get(EP.agents.get(id));
+    if (flags.json) return printJson(a.flow ?? null);
+    if (!a.flow || !Object.keys(a.flow).length) {
+      out(dim(`  Agent ${id} has no conversation flow.`));
+      out(dim(`  Draft one: whissle agents flow generate ${id} --goal "…"`));
+      return;
+    }
+    printFlow(a.flow);
+    // Best-effort derived views — a failure here never breaks `flow show`.
+    try {
+      const wf = await get(EP.agents.workflow(id));
+      if (wf?.summary) out("\n  " + dim("workflow: ") + JSON.stringify(wf.summary));
+    } catch { /* derived view unavailable */ }
+    try {
+      const gr = await get(EP.agents.guardrails(id));
+      const n = (gr?.groups || []).reduce((sum, g) => sum + (g.items || []).length, 0);
+      if (n) out(dim(`  guardrails: ${n} rule(s) across ${(gr.groups || []).length} group(s)`));
+    } catch { /* derived view unavailable */ }
+    return;
+  }
+
+  if (verb === "set") {
+    const id = args[0] || fatal("Usage: whissle agents flow set <agent-id> --file flow.json [--draft]");
+    if (!flags.file) fatal("--file flow.json is required.");
+    const parsed = JSON.parse(readFileSync(flags.file, "utf8"));
+    const flow = unwrapFlow(parsed);
+    const target = flags.draft ? "draft" : "live";
+    const a = await patch(EP.agents.update(id), { flow }, { query: { target } });
+    if (flags.json) return printJson(a);
+    ok(`Saved flow to agent ${id} (${target})`);
+    if (target === "draft") out(dim(`  Stage only — go live: whissle agents flow publish ${id}`));
+    return;
+  }
+
+  if (verb === "generate") {
+    const id = args[0] || fatal('Usage: whissle agents flow generate <agent-id> --goal "…"');
+    // Backend field is `instructions`; --goal is the friendly alias. Both optional.
+    const instructions = flags.goal || flags.instructions;
+    const res = await post(EP.agents.flowGenerate(id), instructions ? { instructions } : {});
+    if (flags.json) return printJson(res);
+    ok(`Drafted a starter flow for agent ${id}`);
+    printFlow(res.flow);
+    if ((res.warnings || []).length) {
+      out("\n  " + dim("warnings:"));
+      for (const w of res.warnings) out("    " + dim("· " + w));
+    }
+    out(dim(`\n  Not saved. Review, then: whissle agents flow set ${id} --file flow.json [--draft]`));
+    return;
+  }
+
+  if (verb === "trace") {
+    const id = args[0] || fatal("Usage: whissle agents flow trace <agent-id> --conversation <id>");
+    // The backend REQUIRES conversation_id (Query(..., min_length=1)).
+    const conv = flags.conversation || fatal("--conversation <id> is required (a conversation that ran this flow).");
+    const res = await get(EP.agents.flowTrace(id), { query: { conversation_id: conv } });
+    if (flags.json) return printJson(res);
+    kv(res, ["conversation_id", "current_state", "flow_version"]);
+    const steps = res.steps || [];
+    out("\n  " + dim("steps:"));
+    table(
+      ["#", "STATE", "EVENT", "DETAIL"],
+      steps.map((st, i) => [
+        String(i + 1), st.state || st.current_state || "—",
+        st.event || st.kind || st.type || "—",
+        trunc(st.detail || st.message || st.transition || st.note || "", 44),
+      ]),
+    );
+    out(dim(`\n  ${steps.length} step(s)`));
+    return;
+  }
+
+  if (verb === "publish") {
+    const id = args[0] || fatal("Usage: whissle agents flow publish <agent-id>");
+    const a = await post(EP.agents.publish(id));
+    if (flags.json) return printJson(a);
+    ok(`Published draft → live for agent ${id}`);
+    return;
+  }
+
+  if (verb === "discard") {
+    const id = args[0] || fatal("Usage: whissle agents flow discard <agent-id>");
+    const a = await post(EP.agents.discardDraft(id));
+    if (flags.json) return printJson(a);
+    ok(`Discarded pending draft for agent ${id}`);
+    return;
+  }
+
+  fatal(`Unknown: agents flow ${verb}. Try show | set | generate | trace | publish | discard.`);
 }

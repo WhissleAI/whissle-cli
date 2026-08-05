@@ -71,9 +71,31 @@ whissle agents delete <id> [--force]
 whissle agents versions <id>                      # saved-config history (every save is snapshotted)
 whissle agents rollback <id> <version-id>         # restore that version's content; deployment untouched
 whissle agents clone <id>                         # duplicate as an undeployed draft ("<name> (copy)")
+whissle agents types                              # agent-type keys for --type (customer_support, …)
 whissle chat <agent-id>                           # interactive text turn
 whissle chat <agent-id> -m "what are your hours?" # one-shot
 ```
+
+### Conversation flow (the in-call state machine)
+
+An agent can carry an optional **flow**: a per-agent state machine that steers a
+live voice/text call turn-by-turn (a state's prompt goal, which tools it may call,
+per-state turn-taking) with guardrails — never a model selector. This is what
+drives flow-based, guard-railed agents in evaluation harnesses.
+
+```bash
+whissle agents flow show <id> [--json]                    # states / transitions / settings (+ derived workflow & guardrails)
+whissle agents flow generate <id> --goal "verify the policy number first"  # AI-draft a starter flow (not saved)
+whissle agents flow set <id> --file flow.json             # author it (writes live)
+whissle agents flow set <id> --file flow.json --draft     # stage it as a draft instead
+whissle agents flow publish <id>                          # promote the staged draft → live
+whissle agents flow discard <id>                          # throw the pending draft away
+whissle agents flow trace <id> --conversation <cid>       # turn-by-turn step trace for one run
+```
+
+`flow.json` may be a bare flow object (`{version, start_state, states, …}`) or a
+wrapper `{ "flow": { … } }`. A `flow` key inside an `agents create/update --file`
+package is also applied, so a whole agent + flow ships in one file.
 
 ### Calls & outbound campaigns
 ```bash
@@ -132,6 +154,8 @@ whissle kb list <agent-id>
 whissle kb add <agent-id> --file handbook.pdf | --text "…" | --url https://acme.com/faq
 whissle tools list
 whissle tools create --file tool.json
+whissle tools update <tool-id> --file tool.json   # edit description / parameters / binding / enabled
+whissle tools delete <tool-id>
 whissle tools attach <tool-id> --agent <agent-id>
 ```
 
@@ -153,6 +177,8 @@ be attached to individual agents.
 whissle connectors list --kind fhir
 whissle connectors add --kind fhir --name "Epic Sandbox" --base-url https://fhir.example.org/r4 \
   --auth client_credentials --token-url https://auth.example.org/token --client-id abc --client-secret ***
+whissle connectors test <id>                      # health-check the stored credential (auth/URL) before a call
+whissle connectors update <id> --file connector.json   # edit name / config / is_active (cookie-auth today)
 whissle connectors remove <id> --force            # agents' fhir_* tools resolve these automatically
 ```
 
@@ -231,6 +257,7 @@ whissle usage                                     # wallet balance + ledger
 whissle models chat "Summarize this" --fast
 whissle models tts "Hello" --out hi.mp3                       # English (default)
 whissle models tts "नमस्ते, कैसे हैं आप?" --language hi --out namaste.mp3   # speaks Hindi
+whissle models voices                             # voice ids for --voice (grouped by engine)
 ```
 `models tts` takes `--language en|hi|te|hinglish|tenglish` (omit it and the platform
 auto-detects from the script); the voice/engine is chosen for you, never exposed.
