@@ -3,8 +3,6 @@
 // Org-level facts that ground EVERY agent's runtime prompt. `add` writes a fact
 // directly; meetings can also propose facts (status=proposed) which a human must
 // `confirm` before they start grounding agents. READ any member; WRITE owner/admin.
-//
-// Note: requires the key-auth backend PR (routes are cookie-auth today).
 import { get, post, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";

@@ -41,6 +41,15 @@ export const EP = {
     versions: (id) => `/api/agents/${id}/versions`,
     rollback: (id, vid) => `/api/agents/${id}/versions/${vid}/rollback`,
     clone: (id) => `/api/agents/${id}/clone`,
+    // In-call conversation flow (the per-agent state machine). Authoring is a
+    // PATCH of `{flow}` to `update` (add `?target=draft` to stage a draft);
+    // these are the read-models + generate/trace + draft→live lifecycle.
+    workflow: (id) => `/api/agents/${id}/workflow`,
+    guardrails: (id) => `/api/agents/${id}/guardrails`,
+    flowGenerate: (id) => `/api/agents/${id}/flow/generate`,
+    flowTrace: (id) => `/api/agents/${id}/flow/trace`,
+    publish: (id) => `/api/agents/${id}/publish`,
+    discardDraft: (id) => `/api/agents/${id}/draft/discard`,
   },
 
   // ── action inbox: human-approval queue for post-call actions ────────────────
@@ -95,7 +104,11 @@ export const EP = {
     chat: "/api/models/chat",
     tts: "/api/models/tts",
     transcribe: "/api/models/transcribe",
+    voices: "/api/models/voices",
   },
+
+  // ── agent-type blueprints (discovery: /api/agent-types) ──────────────────────
+  agentTypes: "/api/agent-types",
 
   // ── org-scoped: call analytics (/api/orgs/{org}/analytics) ───────────────────
   analytics: {
@@ -126,7 +139,9 @@ export const EP = {
   connectors: {
     list: (org) => `/api/orgs/${org}/credentials`,
     create: (org) => `/api/orgs/${org}/credentials`,
+    update: (org, id) => `/api/orgs/${org}/credentials/${id}`,
     del: (org, id) => `/api/orgs/${org}/credentials/${id}`,
+    test: (org, id) => `/api/orgs/${org}/credentials/${id}/test`,
   },
 
   // ── org-scoped: MCP connector app store (/api/orgs/{org}/integrations) ───────
@@ -189,9 +204,14 @@ export const EP = {
   tools: {
     list: (org) => `/api/orgs/${org}/tools`,
     create: (org) => `/api/orgs/${org}/tools`,
+    update: (org, id) => `/api/orgs/${org}/tools/${id}`,
+    del: (org, id) => `/api/orgs/${org}/tools/${id}`,
     attach: (org, id) => `/api/orgs/${org}/tools/${id}/attach`,
   },
 
   // ── org-scoped: billing wallet (/api/orgs/{org}/wallet) ──────────────────────
-  wallet: (org) => `/api/orgs/${org}/wallet`,
+  wallet: {
+    base: (org) => `/api/orgs/${org}/wallet`,
+    ledger: (org) => `/api/orgs/${org}/wallet/ledger`,
+  },
 };

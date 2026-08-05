@@ -1,10 +1,23 @@
-// whissle models chat|tts|transcribe   — the à-la-carte model API (models:invoke).
+// whissle models chat|tts|transcribe|voices   — the à-la-carte model API (models:invoke).
 import { writeFileSync } from "node:fs";
-import { post, upload, raw } from "../api.mjs";
+import { get, post, upload, raw } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, md, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, md, table, dim, printJson, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
+  if (sub === "voices") {
+    // Discovery: the voice ids you can pass to `--voice` (tts) or an agent's voice.
+    const r = await get(EP.models.voices);
+    if (flags.json) return printJson(r);
+    const voices = r.voices || [];
+    table(
+      ["ID", "NAME", "ENGINE", "GENDER", "ACCENT"],
+      voices.map((v) => [v.id, v.name || "—", v.engine || "—", v.gender || "—", v.accent || "—"]),
+    );
+    out(dim(`\n  ${voices.length} voice(s)` + (r.default_engine ? ` · default engine: ${r.default_engine}` : "")));
+    return;
+  }
+
   if (sub === "chat") {
     const prompt = args.join(" ") || fatal('Usage: whissle models chat "your prompt"');
     const messages = [];
@@ -53,5 +66,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: models ${sub}. Try chat | tts | transcribe.`);
+  fatal(`Unknown: models ${sub}. Try chat | tts | transcribe | voices.`);
 }

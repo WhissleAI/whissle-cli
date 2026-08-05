@@ -1,6 +1,6 @@
-// whissle tools list|create|attach   — custom HTTP/data tools on your agents.
+// whissle tools list|create|update|delete|attach   — custom HTTP/data tools.
 import { readFileSync } from "node:fs";
-import { get, post } from "../api.mjs";
+import { get, post, patch, del } from "../api.mjs";
 import { resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
@@ -29,6 +29,28 @@ export async function run(sub, args, flags) {
     return;
   }
 
+  if (sub === "update") {
+    const toolId = args[0] || fatal("Usage: whissle tools update <tool-id> --file tool.json");
+    if (!flags.file) fatal("--file tool.json is required.");
+    const spec = JSON.parse(readFileSync(flags.file, "utf8"));
+    const t = await patch(EP.tools.update(org, toolId), spec);
+    if (flags.json) return printJson(t);
+    ok(`Updated tool ${toolId}`);
+    return;
+  }
+
+  if (sub === "delete") {
+    const toolId = args[0] || fatal("Usage: whissle tools delete <tool-id>");
+    try {
+      await del(EP.tools.del(org, toolId));
+    } catch (e) {
+      if (e.status === 404) fatal(`No tool ${toolId} in this workspace (already deleted?).`);
+      throw e;
+    }
+    ok(`Deleted tool ${toolId}`);
+    return;
+  }
+
   if (sub === "attach") {
     const toolId = args[0] || fatal("Usage: whissle tools attach <tool-id> --agent <agent-id>");
     if (!flags.agent) fatal("--agent <agent-id> is required.");
@@ -37,5 +59,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: tools ${sub}. Try list | create | attach.`);
+  fatal(`Unknown: tools ${sub}. Try list | create | update | delete | attach.`);
 }
