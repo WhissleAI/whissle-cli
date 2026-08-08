@@ -76,6 +76,13 @@ whissle chat <agent-id>                           # interactive text turn
 whissle chat <agent-id> -m "what are your hours?" # one-shot
 ```
 
+`chat` conversations are **persisted**, not scratch. Each run opens its own
+session (stamped `source: "cli"`) and shows up in the studio under
+**Agents → <your agent> → Sessions**, alongside that agent's voice calls — with
+the transcript, the tools it called and, if the agent runs a flow, its flow
+trace. The command prints the link when it starts. `/reset` starts a new
+session; set `WHISSLE_STUDIO_URL` if you run a self-hosted studio.
+
 ### Conversation flow (the in-call state machine)
 
 An agent can carry an optional **flow**: a per-agent state machine that steers a
