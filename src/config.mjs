@@ -11,6 +11,11 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "n
 
 export const DEFAULT_BASE_URL = "https://aws-gateway-backend.whissle.ai/bot";
 
+// The studio (web UI). Not an API host — the CLI never calls it. It is here so a
+// command can tell you WHERE to go and look at what it just did (e.g. `whissle
+// chat` printing the agent's Sessions tab). Overridable for self-hosted installs.
+export const DEFAULT_STUDIO_URL = "https://platform.whissle.ai";
+
 const DIR = join(homedir(), ".whissle");
 const FILE = join(DIR, "config.json");
 
@@ -52,6 +57,8 @@ export function loadConfig() {
     baseUrl: baseUrl.replace(/\/+$/, ""),
     // Cached org id (resolved from the key on first use) to save a round-trip.
     orgId: file.orgId || null,
+    studioUrl: (process.env.WHISSLE_STUDIO_URL || file.studioUrl || DEFAULT_STUDIO_URL)
+      .replace(/\/+$/, ""),
   };
 }
 

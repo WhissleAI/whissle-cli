@@ -44,6 +44,9 @@ src/commands/
                        create --file agent.json = full package: create + PATCH audio/config + ingest knowledge.
                        CREATE_FIELDS vs PATCH_FIELDS decide the two-step apply — keep examples/README.md in sync.
   chat.mjs             interactive + one-shot text turn → POST /api/agents/{id}/chat/turn
+                       Sends source:"cli" + a per-run session_id so each run is its own
+                       SESSION in the studio's history (not one shared per-key thread),
+                       and prints the studio link. turnBody/sessionsUrl are exported for tests.
   calls.mjs            start / campaign / list / get / result / transcript / audio / export
                        start = one outbound call; campaign = one call per CSV row (each column ->
                        a dynamic {{variable}}, --to-col picks the callee, gated by --dry-run/--yes).
