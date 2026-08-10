@@ -106,6 +106,8 @@ ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
 ${bold("Knowledge & tools")}
   whissle kb list <agent-id>
   whissle kb add <agent-id> [--text … | --file f.pdf | --url https://…]
+  whissle kb update <agent-id> <doc-id> [--title …] [--text …]   re-sync in place (reindexes)
+  whissle kb remove <agent-id> <doc-id> --force
   whissle tools list
   whissle tools create --file tool.json
   whissle tools update <tool-id> --file tool.json
@@ -184,6 +186,8 @@ ${bold("Channels — one agent, everywhere")}
   ${dim("Web embed")}  ${dim("(agents:write)")}
   whissle embed enable <agent-id> --origin https://yoursite.com   voice widget on a site
   whissle embed show <agent-id>          embed key + paste-able snippet
+  whissle embed token <agent-id> [--avatar <code>]   mint a visitor session token
+  ${dim("(token = the per-visitor session your OWN backend mints; the key stays server-side)")}
   ${dim("Phone")}  ${dim("(numbers:read / numbers:write)")}
   whissle numbers search [--country US] [--area 415]
   whissle numbers buy <+1…>              buy a number (deducts credits)

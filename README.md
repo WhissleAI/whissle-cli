@@ -159,6 +159,8 @@ trail and the controls.
 ```bash
 whissle kb list <agent-id>
 whissle kb add <agent-id> --file handbook.pdf | --text "…" | --url https://acme.com/faq
+whissle kb update <agent-id> <doc-id> --text "…"   # replace a document in place (reindexed)
+whissle kb remove <agent-id> <doc-id> --force      # also disarms any lookup tool built from it
 whissle tools list
 whissle tools create --file tool.json
 whissle tools update <tool-id> --file tool.json   # edit description / parameters / binding / enabled
@@ -188,6 +190,36 @@ whissle connectors test <id>                      # health-check the stored cred
 whissle connectors update <id> --file connector.json   # edit name / config / is_active (cookie-auth today)
 whissle connectors remove <id> --force            # agents' fhir_* tools resolve these automatically
 ```
+
+### Web embed (run an agent inside your own product)
+```bash
+whissle embed enable <agent-id> --origin https://yoursite.com [--text]
+whissle embed show <agent-id>                     # embed key + paste-able iframe snippet
+whissle embed token <agent-id>                    # mint one visitor's session token
+whissle embed token <agent-id> --avatar F1-HR     # + a browser-rendered avatar token
+```
+
+Two ways to embed. The **iframe** (`embed show`) is no-code: paste the snippet
+and you're done. `embed token` is the other one — the primitive for putting an
+agent inside a UI you built yourself, where your own backend already knows who
+the visitor is:
+
+```
+your page  ──"start"──▶  YOUR backend  ──whissle embed token──▶  Whissle
+                              │
+                              ╰── short-lived token ──▶  your page
+                                                            │
+                                          POST /api/embed/offer?token=…  (voice, SDP)
+                                          POST /api/embed/chat/turn      (text)
+```
+
+Minting with your **secret** (`wsk_`) key makes the session *server-trusted*: the
+token carries no origin, so it works from any page and survives a media
+reconnect — you never allowlist an origin on the Whissle side, because your key
+already is the trust boundary. Your key stays on your server; the browser only
+ever holds a token that expires in 15 minutes. (Minting with a publishable
+`wpk_` key instead gives you an origin-bound, single-use token — that's what the
+`@whissle/agents` SDK does when it runs the mint from the browser.)
 
 ### Phone numbers
 ```bash

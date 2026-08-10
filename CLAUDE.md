@@ -57,11 +57,18 @@ src/commands/
                        NOT org-prefixed. The human-approval queue for held post-call actions + scheduled follow-ups.)
   compliance.mjs       suppressions / suppress / unsuppress / settings [set] / events   (compliance:read/write;
                        org-scoped: /api/orgs/{org}/compliance — Do-Not-Call list, dial rules, evidence trail)
-  kb.mjs               list / add (text|file|url)               (kb:read/write)
+  kb.mjs               list / add (text|file|url) / update / remove   (kb:read/write)
+                       update/remove act on ONE document (EP.agents.kb.doc). They're what makes a
+                       knowledge sync idempotent — without them a re-push only ever ADDS, so an
+                       agent ends up holding every past revision and retrieval quotes the oldest.
   tools.mjs            list / create / attach                   (org-scoped: /api/orgs/{org}/tools)
   connectors.mjs       list / add / remove                      (connectors:read/write; org-scoped: /api/orgs/{org}/credentials)
                        stored org credentials, e.g. a FHIR/EHR server — an agent's fhir_* tools resolve them.
   embed.mjs            show / enable / disable                  (agents:read/write; /api/agents/{id}/embed) — voice widget on a site
+                       token = the RUNTIME half: mint a per-visitor session token (EP.embed.*, the
+                       PUBLIC /api/embed/* routes). A wsk_ mint is SERVER-TRUSTED — the token carries
+                       no origin, so a partner backend hands it to any browser without allowlisting
+                       an origin here. --avatar chains the browser-direct Simli mint.
   numbers.mjs          list / available / search / buy / claim / connect / release  (numbers:read/write; /api/orgs/{org}/twilio)
   integrations.mjs     catalog / list / add / connect / attach / detach / remove   (MCP connector store; org-scoped: /api/orgs/{org}/integrations) †
   models.mjs           chat / tts / transcribe                  (models:invoke)
