@@ -52,6 +52,28 @@ export const EP = {
     discardDraft: (id) => `/api/agents/${id}/draft/discard`,
   },
 
+  // ── embed SESSIONS: the public surface a browser runs an agent against ──────
+  // Distinct from `agents.embed`, which is the agent's embed CONFIG (enable the
+  // widget, set allowed origins). These are the runtime: mint a short-lived
+  // session token, then open voice (offer) / text (chatTurn) / a browser-rendered
+  // avatar (simliToken) with it. All four are PUBLIC routes authorized by the
+  // token itself, not by a bearer key — only the mint takes a credential.
+  //
+  // A token minted with a SECRET (wsk_) key is server-trusted: it carries no
+  // origin, so the browser can open the session from anywhere and the partner
+  // never has to allowlist an origin on the Whissle side. A publishable (wpk_)
+  // key mints an origin-bound, single-use token instead.
+  embed: {
+    sessionToken: "/api/embed/session-token",
+    // WebRTC signaling. `?token=` + POST an SDP offer; PATCH trickles ICE.
+    offer: "/api/embed/offer",
+    // Text turn against the same session token (no WebRTC, no audio).
+    chatTurn: "/api/embed/chat/turn",
+    // Browser-direct Simli avatar token — `?token=` + `?avatar_id=`, so the
+    // partner's page renders the avatar and our node does zero video codec.
+    simliToken: "/api/embed/simli-token",
+  },
+
   // ── action inbox: human-approval queue for post-call actions ────────────────
   // Key resolves the org (like /api/calls), so NOT org-prefixed.
   actions: {

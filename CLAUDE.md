@@ -62,6 +62,10 @@ src/commands/
   connectors.mjs       list / add / remove                      (connectors:read/write; org-scoped: /api/orgs/{org}/credentials)
                        stored org credentials, e.g. a FHIR/EHR server — an agent's fhir_* tools resolve them.
   embed.mjs            show / enable / disable                  (agents:read/write; /api/agents/{id}/embed) — voice widget on a site
+                       token = the RUNTIME half: mint a per-visitor session token (EP.embed.*, the
+                       PUBLIC /api/embed/* routes). A wsk_ mint is SERVER-TRUSTED — the token carries
+                       no origin, so a partner backend hands it to any browser without allowlisting
+                       an origin here. --avatar chains the browser-direct Simli mint.
   numbers.mjs          list / available / search / buy / claim / connect / release  (numbers:read/write; /api/orgs/{org}/twilio)
   integrations.mjs     catalog / list / add / connect / attach / detach / remove   (MCP connector store; org-scoped: /api/orgs/{org}/integrations) †
   models.mjs           chat / tts / transcribe                  (models:invoke)

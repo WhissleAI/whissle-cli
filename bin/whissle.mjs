@@ -184,6 +184,8 @@ ${bold("Channels — one agent, everywhere")}
   ${dim("Web embed")}  ${dim("(agents:write)")}
   whissle embed enable <agent-id> --origin https://yoursite.com   voice widget on a site
   whissle embed show <agent-id>          embed key + paste-able snippet
+  whissle embed token <agent-id> [--avatar <code>]   mint a visitor session token
+  ${dim("(token = the per-visitor session your OWN backend mints; the key stays server-side)")}
   ${dim("Phone")}  ${dim("(numbers:read / numbers:write)")}
   whissle numbers search [--country US] [--area 415]
   whissle numbers buy <+1…>              buy a number (deducts credits)

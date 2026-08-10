@@ -189,6 +189,36 @@ whissle connectors update <id> --file connector.json   # edit name / config / is
 whissle connectors remove <id> --force            # agents' fhir_* tools resolve these automatically
 ```
 
+### Web embed (run an agent inside your own product)
+```bash
+whissle embed enable <agent-id> --origin https://yoursite.com [--text]
+whissle embed show <agent-id>                     # embed key + paste-able iframe snippet
+whissle embed token <agent-id>                    # mint one visitor's session token
+whissle embed token <agent-id> --avatar F1-HR     # + a browser-rendered avatar token
+```
+
+Two ways to embed. The **iframe** (`embed show`) is no-code: paste the snippet
+and you're done. `embed token` is the other one — the primitive for putting an
+agent inside a UI you built yourself, where your own backend already knows who
+the visitor is:
+
+```
+your page  ──"start"──▶  YOUR backend  ──whissle embed token──▶  Whissle
+                              │
+                              ╰── short-lived token ──▶  your page
+                                                            │
+                                          POST /api/embed/offer?token=…  (voice, SDP)
+                                          POST /api/embed/chat/turn      (text)
+```
+
+Minting with your **secret** (`wsk_`) key makes the session *server-trusted*: the
+token carries no origin, so it works from any page and survives a media
+reconnect — you never allowlist an origin on the Whissle side, because your key
+already is the trust boundary. Your key stays on your server; the browser only
+ever holds a token that expires in 15 minutes. (Minting with a publishable
+`wpk_` key instead gives you an origin-bound, single-use token — that's what the
+`@whissle/agents` SDK does when it runs the mint from the browser.)
+
 ### Phone numbers
 ```bash
 whissle numbers list                              # your numbers
