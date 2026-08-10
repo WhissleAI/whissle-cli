@@ -177,13 +177,25 @@ export async function run(sub, args, flags) {
   }
 
   if (!sub || sub === "list") {
-    const calls = await get(EP.calls.list, {
-      query: { agent_id: flags.agent, limit: flags.limit || 25, status: flags.status },
+    // `view=summary` is not an optimization here, it's the only shape that
+    // paginates: the default list returns EVERY matching call with its full
+    // transcript and metadata and ignores `limit` entirely, so `--limit 25` on a
+    // workspace with a thousand calls silently downloaded all thousand — with
+    // transcripts — to print 25 rows. The summary shape carries exactly the
+    // columns this table renders and honours limit/offset.
+    const limit = Number(flags.limit) || 25;
+    const page = await get(EP.calls.list, {
+      query: { agent_id: flags.agent, view: "summary", limit, offset: flags.offset },
     });
+    const items = page?.items ?? [];
+    const total = page?.total ?? items.length;
+    // `status` has no server-side filter on this route; do it here rather than
+    // pretend the flag reached the backend.
+    const calls = flags.status ? items.filter((c) => c.status === flags.status) : items;
     if (flags.json) return printJson(calls);
     table(
       ["ID", "AGENT", "STATUS", "DUR", "WHEN"],
-      (calls || []).map((c) => [
+      calls.map((c) => [
         c.id,
         trunc(c.agent_name || c.agent_id || "—", 20),
         c.status || "—",
@@ -191,7 +203,8 @@ export async function run(sub, args, flags) {
         (c.created_at || "").slice(0, 16).replace("T", " "),
       ]),
     );
-    out(dim(`\n  ${(calls || []).length} call(s)  ·  filter with --agent <id> --status <s> --limit N`));
+    const more = total > items.length ? ` of ${total}` : "";
+    out(dim(`\n  ${calls.length}${more} call(s)  ·  filter with --agent <id> --status <s> --limit N --offset N`));
     return;
   }
 
@@ -255,9 +268,19 @@ export async function run(sub, args, flags) {
   if (sub === "export") {
     // Bulk-pull calls + transcripts for offline evaluation. JSONL (default) or CSV.
     const fmt = (flags.format || "jsonl").toLowerCase();
-    const list = await get(EP.calls.list, { query: { agent_id: flags.agent, limit: flags.limit || 1000, status: flags.status } });
-    let calls = list || [];
-    if (flags.since) calls = calls.filter((c) => (c.created_at || "") >= flags.since);
+    // Index via the summary view: it honours --limit and --since server-side,
+    // and every row here is re-fetched in full below anyway, so pulling
+    // transcripts twice (once in the index, once per call) was pure waste — and
+    // on the default shape --limit was ignored, so `export --limit 10` walked
+    // the entire workspace.
+    const page = await get(EP.calls.list, {
+      query: {
+        agent_id: flags.agent, view: "summary",
+        limit: Number(flags.limit) || 1000, since: flags.since,
+      },
+    });
+    let calls = page?.items ?? [];
+    if (flags.status) calls = calls.filter((c) => c.status === flags.status);
 
     let output;
     if (fmt === "csv") {
