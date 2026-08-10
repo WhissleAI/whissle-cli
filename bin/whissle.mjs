@@ -106,6 +106,8 @@ ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
 ${bold("Knowledge & tools")}
   whissle kb list <agent-id>
   whissle kb add <agent-id> [--text … | --file f.pdf | --url https://…]
+  whissle kb update <agent-id> <doc-id> [--title …] [--text …]   re-sync in place (reindexes)
+  whissle kb remove <agent-id> <doc-id> --force
   whissle tools list
   whissle tools create --file tool.json
   whissle tools update <tool-id> --file tool.json

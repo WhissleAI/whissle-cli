@@ -27,8 +27,13 @@ export const EP = {
     update: (id) => `/api/agents/${id}`,
     del: (id) => `/api/agents/${id}`,
     // Knowledge base (RAG). `kb` is the base — GET lists docs, POST adds a snippet.
+    // `doc` is one document: PATCH edits its title/content (and reindexes it),
+    // DELETE removes it and disarms any lookup tool it was feeding. Without
+    // these, re-syncing knowledge from a source of truth can only ever ADD, so
+    // an agent accumulates stale copies of the same document.
     kb: {
       base: (id) => `/api/agents/${id}/kb`,
+      doc: (id, docId) => `/api/agents/${id}/kb/${docId}`,
       fromUrl: (id) => `/api/agents/${id}/kb/from-url`,
       upload: (id) => `/api/agents/${id}/kb/upload`,
     },

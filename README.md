@@ -159,6 +159,8 @@ trail and the controls.
 ```bash
 whissle kb list <agent-id>
 whissle kb add <agent-id> --file handbook.pdf | --text "…" | --url https://acme.com/faq
+whissle kb update <agent-id> <doc-id> --text "…"   # replace a document in place (reindexed)
+whissle kb remove <agent-id> <doc-id> --force      # also disarms any lookup tool built from it
 whissle tools list
 whissle tools create --file tool.json
 whissle tools update <tool-id> --file tool.json   # edit description / parameters / binding / enabled
