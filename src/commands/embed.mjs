@@ -35,7 +35,7 @@ export function avatarCode(flag) {
   // Repeated `--avatar a --avatar b` collects into an array; the last wins.
   const value = Array.isArray(flag) ? flag[flag.length - 1] : flag;
   if (value === true || String(value).trim() === "") {
-    fatal("--avatar needs an avatar code, e.g. --avatar deborah. See `whissle embed --help`.");
+    fatal("--avatar needs an avatar code, e.g. --avatar F1-HR. Codes: F1-HR F2-TL F3-SE M1-HR M2-TL M3-SE.");
   }
   return String(value).trim();
 }
