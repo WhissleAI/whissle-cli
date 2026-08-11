@@ -4,7 +4,7 @@
 // "embed_key or api_key required", so pin it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { sessionBody, openUrls } from "../src/commands/embed.mjs";
+import { sessionBody, openUrls, avatarCode } from "../src/commands/embed.mjs";
 import { EP } from "../src/endpoints.mjs";
 
 test("the credential travels in the body as api_key", () => {
@@ -25,6 +25,40 @@ test("open URLs are absolute and carry no token", () => {
   const urls = openUrls("https://aws-gateway-backend.whissle.ai/bot");
   assert.equal(urls.voice, "https://aws-gateway-backend.whissle.ai/bot/api/embed/offer");
   assert.equal(urls.text, "https://aws-gateway-backend.whissle.ai/bot/api/embed/chat/turn");
+});
+
+test("no --avatar means no avatar mint", () => {
+  assert.equal(avatarCode(undefined), null);
+  assert.equal(avatarCode(null), null);
+  assert.equal(avatarCode(false), null);
+});
+
+test("--avatar <code> is passed through, trimmed; the last one wins", () => {
+  assert.equal(avatarCode("deborah"), "deborah");
+  assert.equal(avatarCode(" deborah "), "deborah");
+  // Repeated flags collect into an array (bin/whissle parse()).
+  assert.equal(avatarCode(["deborah", "marcus"]), "marcus");
+});
+
+test("a bare --avatar is a usage error, not a silent skip", () => {
+  // It used to be `flags.avatar !== true`, so `--avatar` with no value quietly
+  // minted a plain session: the user asked for an avatar, didn't get one, and
+  // nothing said why.
+  const realExit = process.exit;
+  const realWrite = process.stderr.write;
+  let code = null;
+  process.exit = (c) => { code = c; throw new Error("exit"); };
+  process.stderr.write = () => true; // fatal() prints; don't pollute the report
+  try {
+    assert.throws(() => avatarCode(true));
+    assert.equal(code, 1);
+    code = null;
+    assert.throws(() => avatarCode("   "));
+    assert.equal(code, 1);
+  } finally {
+    process.exit = realExit;
+    process.stderr.write = realWrite;
+  }
 });
 
 test("the embed session paths are the public ones, not the agent config path", () => {

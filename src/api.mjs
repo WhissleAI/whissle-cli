@@ -11,11 +11,14 @@ import { loadConfig, saveConfig } from "./config.mjs";
 import { EP } from "./endpoints.mjs";
 
 export class ApiError extends Error {
-  constructor(status, message, body) {
+  constructor(status, message, body, { code = null } = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    // A machine-readable tag for failures that never reach the network (so they
+    // carry no HTTP status). `src/exit.mjs` maps it to an exit code.
+    this.code = code;
   }
 }
 
@@ -24,6 +27,8 @@ function authHeader(cfg) {
     throw new ApiError(
       0,
       "No API key configured. Run `whissle login` (or set WHISSLE_API_KEY) with a workspace secret key from Settings → API keys.",
+      null,
+      { code: "no_key" },
     );
   }
   return { Authorization: `Bearer ${cfg.apiKey}` };
@@ -109,7 +114,7 @@ export async function resolveOrgId(cfg = loadConfig()) {
   if (cfg.orgId) return cfg.orgId;
   const me = await whoami(cfg);
   const id = me?.organization?.id;
-  if (!id) throw new ApiError(0, "Could not resolve a workspace for this key.");
+  if (!id) throw new ApiError(0, "Could not resolve a workspace for this key.", null, { code: "no_org" });
   saveConfig({ orgId: id });
   return id;
 }

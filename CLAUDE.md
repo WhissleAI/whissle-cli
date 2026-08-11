@@ -53,6 +53,14 @@ src/commands/
                        start/campaign take --var k=v / --vars-file. (calls:read records; calls:write to place)
                        result = the partner outcome envelope (GET /api/calls/{id}/result); --wait polls until
                        ready:true or a terminal status (isTerminal() in calls.mjs, unit-tested in test/).
+  sessions.mjs         list / get / trace                        (calls:read; /api/sessions — the UNION of `calls`
+                       and text `conversations`, each item tagged kind=voice|text. `calls` cannot see a CLI /
+                       widget / n8n thread at all. `--agent companion` returns the CALLER'S OWN companion
+                       sessions only. trace = per-turn observability: tool runs with args/duration/citations,
+                       WHICH PROVIDER ANSWERED + a marker when it failed over (surfaced nowhere else in the
+                       product), token cost, latency, invented tools and action-integrity catches. Voice
+                       traces delegate to /api/calls/{id}/trace, kept as a fallback path for a raw call id.
+                       Pure shapers (summarize/groupByTurn/partitionEvents/*Lines) are exported + unit-tested.
   actions.mjs          list / approve / reject / scheduled / cancel-scheduled   (actions:read/write; /api/actions —
                        NOT org-prefixed. The human-approval queue for held post-call actions + scheduled follow-ups.)
   compliance.mjs       suppressions / suppress / unsuppress / settings [set] / events   (compliance:read/write;
@@ -107,7 +115,18 @@ existed cannot be granted it and is refused — mint a fresh key to manage conne
   positionals; `flags` = parsed `--k v` / `--bool` / `-m` (plus global `--json`).
 - **Output**: human tables by default; `--json` everywhere for scripting/`jq`.
 - **Errors**: `api.mjs` throws `ApiError` with a friendly message (401→login,
-  402→top up, 403→scope); the entry point prints it and exits non-zero.
+  402→top up, 403→scope); the entry point prints it and exits via
+  `exitCodeFor()`.
+- **Exit codes** (`src/exit.mjs`, documented in `whissle help` + README): `0` ok,
+  `1` generic, `2` auth (401/403, or a client-side `no_key`/`no_org`), `3` not
+  found (404), `4` out of credit (402). They are a public contract — a script
+  branches on them, so changing one is a breaking change.
+- **Help**: `whissle <group> --help` works for every group. `helpFor()` in
+  `bin/whissle.mjs` SLICES the master `HELP` string rather than duplicating it —
+  24 hand-maintained help blobs would drift within a release. A line belongs to a
+  group when it starts with `whissle <group>`; hanging-indented lines and
+  bracketed asides come with it, a word at the command column is the next
+  section's sub-heading and does not.
 
 ## Adding an endpoint
 
