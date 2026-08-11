@@ -3,9 +3,26 @@
   "version": "1.0.0",
   "description": "Command-line interface for the Whissle Voice Agents platform — configure agents, run them, and pull your calls, transcripts and usage for your own evaluation.",
   "type": "module",
+  "license": "MIT",
+  "author": "Whissle AI <support@whissle.ai>",
+  "homepage": "https://github.com/WhissleAI/whissle-cli#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WhissleAI/whissle-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/WhissleAI/whissle-cli/issues"
+  },
   "bin": {
     "whissle": "./bin/whissle.mjs"
   },
+  "files": [
+    "bin",
+    "src",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node bin/whissle.mjs",
     "whissle": "node bin/whissle.mjs",
@@ -14,8 +31,20 @@
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["whissle", "voice", "agents", "cli", "ai", "stt", "tts"],
-  "license": "UNLICENSED",
+  "keywords": [
+    "whissle",
+    "voice",
+    "agents",
+    "cli",
+    "ai",
+    "stt",
+    "tts",
+    "voice-agents",
+    "conversational-ai"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "chalk": "^5.3.0",
     "marked": "^15.0.0",

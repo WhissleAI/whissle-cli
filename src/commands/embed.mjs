@@ -58,8 +58,12 @@ function show(cfg) {
     out("\n  " + dim("Paste this on your site:"));
     out("  " + cfg.snippet);
   }
-  out("\n  " + dim("Or wire it into your own UI with @whissle/agents + a publishable (wpk_) key:"));
-  out(dim("    npm i @whissle/agents  →  WhissleAgents.mount('#el', { apiKey: 'wpk_…', agentId: '<id>' })"));
+  // The JS SDK is not on npm yet, so DON'T print `npm i @whissle/agents` — a flat
+  // instruction that 404s is worse than no instruction. Point at the repo, which
+  // is installable today, and say plainly that the npm name is coming.
+  out("\n  " + dim("Or wire it into your own UI with the browser SDK + a publishable (wpk_) key:"));
+  out(dim("    WhissleAgents.mount('#el', { apiKey: 'wpk_…', agentId: '<id>' })"));
+  out(dim("    SDK: github.com/WhissleAI/agents_js_sdk  (npm: @whissle/agents, publishing shortly)"));
 }
 
 export async function run(sub, args, flags) {

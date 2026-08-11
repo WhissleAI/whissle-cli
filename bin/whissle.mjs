@@ -5,6 +5,7 @@
 // Global flags: --json (machine output), --base-url <url>, --key <wsk_…>
 // Per-group help: whissle <group> --help
 import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
 import { ApiError } from "../src/api.mjs";
 import { exitCodeFor, EXIT_CODES_HELP } from "../src/exit.mjs";
 import { err, out, brand, bold, dim } from "../src/ui.mjs";
@@ -309,8 +310,25 @@ async function main() {
 
 // Only run the CLI when invoked directly — importing this module (e.g. from the
 // test suite, to exercise `parse`) must not kick off `main()`.
-const invokedDirectly =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+//
+// argv[1] MUST be realpath'd first. `npm i -g` installs `bin` as a SYMLINK
+// (node_modules/.bin/whissle → ../@whissle/cli/bin/whissle.mjs), so argv[1] is
+// the symlink while `import.meta.url` is the resolved real path. Comparing them
+// raw made every installed copy of the CLI a silent no-op: `whissle help`
+// printed nothing and exited 0, because `main()` was never called. It only ever
+// worked when run from a source checkout, which is why no test caught it.
+export function isDirectInvocation(argv1, moduleUrl) {
+  if (!argv1) return false;
+  try {
+    return moduleUrl === pathToFileURL(realpathSync(argv1)).href;
+  } catch {
+    // argv[1] can be a path that no longer exists (or is unreadable); fall back
+    // to the literal compare rather than throwing on startup.
+    return moduleUrl === pathToFileURL(argv1).href;
+  }
+}
+
+const invokedDirectly = isDirectInvocation(process.argv[1], import.meta.url);
 if (invokedDirectly) {
   main().catch((e) => {
     if (e instanceof ApiError) err(brand("✗ ") + e.message);
