@@ -22,6 +22,24 @@ export function sessionBody(cfg, agentId) {
   return { api_key: cfg.apiKey, agent_id: agentId };
 }
 
+/**
+ * The avatar code from `--avatar`, or null when the flag was not given.
+ *
+ * A bare `--avatar` parses to boolean `true`. That used to be read as "no
+ * avatar" and SILENTLY skipped the mint — the user asked for an avatar, got a
+ * plain session, and nothing said why. It is a usage error, so it errors.
+ * Exported for tests.
+ */
+export function avatarCode(flag) {
+  if (flag === undefined || flag === null || flag === false) return null;
+  // Repeated `--avatar a --avatar b` collects into an array; the last wins.
+  const value = Array.isArray(flag) ? flag[flag.length - 1] : flag;
+  if (value === true || String(value).trim() === "") {
+    fatal("--avatar needs an avatar code, e.g. --avatar deborah. See `whissle embed --help`.");
+  }
+  return String(value).trim();
+}
+
 /** Where the browser takes the minted token. Exported for tests. */
 export function openUrls(baseUrl) {
   return { voice: `${baseUrl}${EP.embed.offer}`, text: `${baseUrl}${EP.embed.chatTurn}` };
@@ -45,7 +63,7 @@ function show(cfg) {
 }
 
 export async function run(sub, args, flags) {
-  const id = args[0] || fatal("Usage: whissle embed <show|enable|disable> <agent-id>");
+  const id = args[0] || fatal("Usage: whissle embed <show|enable|disable|token> <agent-id>");
 
   if (!sub || sub === "show") {
     const cfg = await get(EP.agents.embed(id));
@@ -89,9 +107,10 @@ export async function run(sub, args, flags) {
     // avatar itself and our node does zero video codec. Authed by the session
     // token we just minted — same credential the offer uses.
     let avatar = null;
-    if (flags.avatar && flags.avatar !== true) {
+    const avatarId = avatarCode(flags.avatar);
+    if (avatarId) {
       avatar = await post(EP.embed.simliToken, undefined, {
-        query: { token: session.token, avatar_id: flags.avatar },
+        query: { token: session.token, avatar_id: avatarId },
       });
     }
 

@@ -3,14 +3,17 @@
 //
 // Grammar:  whissle <group> [subcommand] [positionals…] [--flags]
 // Global flags: --json (machine output), --base-url <url>, --key <wsk_…>
+// Per-group help: whissle <group> --help
 import { pathToFileURL } from "node:url";
 import { ApiError } from "../src/api.mjs";
+import { exitCodeFor, EXIT_CODES_HELP } from "../src/exit.mjs";
 import { err, out, brand, bold, dim } from "../src/ui.mjs";
 
 const GROUPS = {
   agents: () => import("../src/commands/agents.mjs"),
   chat: () => import("../src/commands/chat.mjs"),
   calls: () => import("../src/commands/calls.mjs"),
+  sessions: () => import("../src/commands/sessions.mjs"),
   actions: () => import("../src/commands/actions.mjs"),
   compliance: () => import("../src/commands/compliance.mjs"),
   kb: () => import("../src/commands/kb.mjs"),
@@ -102,6 +105,14 @@ ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
   whissle calls transcript <id>
   whissle calls audio <id>            signed recording URL
   whissle calls export [--agent <id>] [--since 2026-07-01] [--format jsonl|csv] [--out f]
+
+${bold("Sessions")}  ${dim("(needs calls:read)")}  ${dim("— voice calls AND text threads, one history")}
+  whissle sessions list [--agent <id|companion>] [--kind voice|text] [--since ISO]
+                       [--limit N] [--offset N]     ${dim("`calls` only sees the calls table")}
+  whissle sessions get <session-id>       transcript + tool runs + summary, either kind
+  whissle sessions trace <session-id> [--all] [--turns N]
+                       ${dim("turn-by-turn: tools + args + duration, KB citations, token cost,")}
+                       ${dim("and WHICH PROVIDER ANSWERED — flagged when it failed over")}
 
 ${bold("Knowledge & tools")}
   whissle kb list <agent-id>
@@ -204,7 +215,62 @@ ${bold("Billing")}
   whissle usage                       wallet balance + recent ledger
 
 Global: --json (machine output), --base-url <url>, --key <wsk_…>
+Per-command help: whissle <group> --help   (e.g. whissle sessions --help)
+${EXIT_CODES_HELP}
 Docs: https://platform.whissle.ai/docs`;
+
+// Strip SGR colour so help parsing works whether or not chalk is emitting it.
+const PLAIN = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+/**
+ * The help for ONE group, sliced out of HELP.
+ *
+ * Derived rather than duplicated on purpose: 24 hand-maintained help strings
+ * would drift from the master list within a release, and a per-group help that
+ * lies is worse than none. A line belongs to a group when it starts with
+ * `whissle <group>`; the indented line(s) that follow it are its continuation,
+ * and the un-indented section heading above it comes along for context.
+ *
+ * Pure — exported for tests.
+ */
+export function helpFor(group, help = HELP) {
+  // `config` also serves the three top-level identity verbs.
+  const verbs = group === "config" ? ["config", "login", "logout", "whoami"] : [group];
+  const isMine = (plain) => verbs.some((v) => new RegExp(`^\\s+whissle ${v}(\\s|$)`).test(plain));
+  const isCommand = (plain) => /^\s+whissle\s/.test(plain);
+  // A continuation of the command above it: either hanging-indented past the
+  // command column, or an aside starting with a bracket/dash. A line that starts
+  // a WORD at the command column is a sub-heading for what comes next ("Phone",
+  // "Web embed"), so it must not be dragged in as the previous command's tail.
+  const isContinuation = (plain) => /^\s{3,}\S/.test(plain) || /^\s*[^\sA-Za-z]/.test(plain);
+
+  const sections = [];
+  let heading = null, kept = [], pending = [], keeping = false;
+  const flush = () => {
+    if (kept.length) sections.push({ heading, lines: kept });
+    kept = [];
+  };
+
+  for (const line of help.split("\n")) {
+    const plain = PLAIN(line);
+    if (!plain.trim()) { keeping = false; pending = []; continue; }
+    if (!/^\s/.test(plain)) { flush(); heading = line; pending = []; keeping = false; continue; }
+    if (isMine(plain)) { kept.push(...pending, line); pending = []; keeping = true; }
+    else if (keeping && !isCommand(plain) && isContinuation(plain)) kept.push(line);
+    else { keeping = false; pending = isCommand(plain) ? [] : [line]; }
+  }
+  flush();
+
+  if (!sections.length) return HELP; // an unknown group gets the whole map
+
+  const body = sections
+    .map((s) => (s.heading ? s.heading + "\n" : "") + s.lines.join("\n"))
+    .join("\n\n");
+  return `${brand("whissle " + group)}\n\n${body}\n
+Global: --json (machine output), --base-url <url>, --key <wsk_…>
+${EXIT_CODES_HELP}
+Full command map: whissle help`;
+}
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -233,6 +299,10 @@ async function main() {
     process.exit(1);
   }
 
+  // `whissle <group> --help` (and `… help`) must print the group's commands, not
+  // fall through into arg parsing and 400 against the API.
+  if (flags.help || flags.h || sub === "help") return out(helpFor(first));
+
   const mod = await GROUPS[group]();
   await mod.run(sub, rest, flags);
 }
@@ -245,6 +315,7 @@ if (invokedDirectly) {
   main().catch((e) => {
     if (e instanceof ApiError) err(brand("✗ ") + e.message);
     else err(brand("✗ ") + (e?.stack || e?.message || String(e)));
-    process.exit(1);
+    // Differentiated so a script can branch: 2 auth, 3 not found, 4 no credit.
+    process.exit(exitCodeFor(e));
   });
 }

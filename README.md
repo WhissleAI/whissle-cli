@@ -128,6 +128,36 @@ integration — the n8n node mirrors it) poll `whissle calls result <id> --wait`
 until `ready: true`, then read the disposition and the scorer's full structured
 result. `--wait` exits non-zero on timeout, so it's safe to gate a script on.
 
+### Sessions (voice calls **and** text threads, one history)
+```bash
+whissle sessions list                              # newest first, both kinds, with a `kind` column
+whissle sessions list --kind text --agent <id> --since 2026-08-01 --limit 50 --offset 50
+whissle sessions list --agent companion            # YOUR OWN companion sessions, nobody else's
+whissle sessions get <session-id>                  # summary + tool runs + transcript, either kind
+whissle sessions trace <session-id>                # turn-by-turn observability (see below)
+whissle sessions trace <session-id> --all --json | jq '.events.events[] | select(.data.failed_over)'
+```
+`calls` means *rows from the calls table*, and structurally cannot see a session
+that never was a phone call — a CLI run, an embedded widget, an n8n step and a
+partner integration all persist a **text** thread. `sessions` is the union of
+both, on the same `calls:read` scope, so no key has to be re-issued.
+
+`trace` is the observability view, and for a text session it is the **only**
+place that shows:
+
+* every tool run with its arguments, duration, outcome and the KB citations it
+  raised — including a tool the model **invented**, which is a different fact
+  from a tool that ran and failed;
+* **which provider and model actually answered**, with a loud marker when the
+  turn **failed over** from the primary vendor to the fallback — nothing else in
+  the product surfaces that to a human, and the caller never sees it;
+* per-turn latency, hop count, token cost (input / output / cached), and any
+  action-integrity catch where the reply claimed something no tool did.
+
+Voice sessions trace too (`/api/calls/{id}/trace` under the hood — endpointing,
+barge-in, shadow drafts, flow state). Voice-only signal families are named as
+inapplicable on a text session rather than shown as zero.
+
 ### Action inbox (human-in-the-loop approvals)
 ```bash
 whissle actions list [--status pending|approved|rejected|auto_executed|all] [--agent <id>]
@@ -341,6 +371,7 @@ didn't exist when it was made.
 |---|---|
 | agents, embed, chat | `agents:read` / `agents:write` (versions/rollback/clone too) |
 | calls, campaign (client batch) | `calls:read` / `calls:write` (start/campaign place calls; `result` is read) |
+| **sessions** (voice + text history, traces) | `calls:read` |
 | **actions** (inbox) | `actions:read` / `actions:write` (approve/reject/cancel) |
 | **compliance** | `compliance:read` / `compliance:write` *(write = owner/admin)* |
 | kb | `kb:read` / `kb:write` |
@@ -358,6 +389,23 @@ didn't exist when it was made.
 | **memory** | `memory:read` / `memory:write` |
 | models | `models:invoke` |
 | usage | `billing:read` |
+
+## Exit codes
+
+Every command exits with a code a script can branch on, not a blanket `1`:
+
+| Code | Meaning |
+|---|---|
+| `0` | success |
+| `1` | generic failure (unmapped 4xx, a 5xx, a network error, a usage mistake) |
+| `2` | auth — no key, invalid/revoked key, or the key lacks the scope (401 / 403) |
+| `3` | not found — no such record, or not visible to this key (404) |
+| `4` | out of credit (402) — retrying will not help; top up in Settings → Billing |
+
+`whissle whoami` is held to this too: a rejected key exits `2` instead of
+printing a cached workspace and claiming success.
+
+Per-command help is `whissle <group> --help` (e.g. `whissle sessions --help`).
 
 ## Keys, at a glance
 

@@ -98,6 +98,27 @@ export const EP = {
     audioUrl: (id) => `/api/calls/${id}/audio/url`,
     // Partner-facing outcome envelope — poll until `ready:true`.
     result: (id) => `/api/calls/${id}/result`,
+    // Per-turn observability for a VOICE call (flow trace + turn signals + the
+    // live-signal event stream). `sessions.trace` delegates here for a voice
+    // session and returns this payload verbatim; kept as its own path because a
+    // call id is a legitimate thing to trace directly.
+    trace: (id) => `/api/calls/${id}/trace`,
+  },
+
+  // ── sessions: the UNION of calls and text threads ───────────────────────────
+  // `/api/calls` means "rows from the calls table" and structurally cannot see a
+  // CLI/widget/partner text thread. `/api/sessions` is the superset, and every
+  // item carries a `kind` discriminator (`voice` | `text`). Same `calls:read`
+  // scope — a different view of data that scope can already read.
+  //
+  // `agent_id=companion` is the one filter that changes WHO the answer is about:
+  // it returns the CALLER'S OWN companion sessions and nobody else's.
+  sessions: {
+    list: "/api/sessions",
+    get: (id) => `/api/sessions/${id}`,
+    // Kind-agnostic: voice delegates to `calls.trace`, text is shaped from the
+    // persisted thread (tool runs, LLM hops, token cost, integrity catches).
+    trace: (id) => `/api/sessions/${id}/trace`,
   },
 
   // ── server-side managed outbound campaigns ──────────────────────────────────
