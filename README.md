@@ -5,12 +5,17 @@ Run your whole Whissle workspace from the terminal or a script: **onboard**
 **place calls and campaigns**, and **pull records** (calls, transcripts, usage,
 analytics) for your own evaluation and logs.
 
-It's the server-side companion to the browser embed SDK (`@whissle/agents`):
-where the SDK *runs* one agent in a web page with a publishable `wpk_` key, this
-CLI *manages* the workspace with a secret `wsk_` key. Plain Node ESM, no build
-step, and every command takes `--json` for scripting.
+It's the server-side companion to the browser embed SDK
+([`agents_js_sdk`](https://github.com/WhissleAI/agents_js_sdk), npm name
+`@whissle/agents`, publishing shortly): where the SDK *runs* one agent in a web
+page with a publishable `wpk_` key, this CLI *manages* the workspace with a
+secret `wsk_` key. Plain Node ESM, no build step, and every command takes
+`--json` for scripting.
 
 ## Install
+
+**Not on npm yet.** The package is `@whissle/cli` and publishes shortly; until it
+does, `npm i -g @whissle/cli` will 404. Install from git:
 
 ```bash
 git clone https://github.com/WhissleAI/whissle-cli
@@ -19,7 +24,13 @@ npm install
 npm link            # optional — puts `whissle` on your PATH
 ```
 
-Requires Node 18+.
+Or install straight from the repo without cloning:
+
+```bash
+npm i -g github:WhissleAI/whissle-cli
+```
+
+Requires Node 18+. No build step — it's plain ESM, so what you clone is what runs.
 
 ## Connect
 
@@ -390,7 +401,37 @@ didn't exist when it was made.
 | models | `models:invoke` |
 | usage | `billing:read` |
 
-## Exit codes
+## Scripting contract
+
+Three things are stable enough to build a script on: `--json`, per-group
+`--help`, and the exit codes.
+
+### `--json` everywhere
+
+Every command takes `--json` and prints the raw API payload — no colour, no
+tables, no truncation — so you can pipe it straight into `jq`:
+
+```bash
+whissle sessions list --kind text --json | jq -r '.sessions[].id'
+whissle calls result <id> --wait --json | jq '.result.disposition'
+whissle sessions trace <id> --all --json | jq '.events.events[] | select(.data.failed_over)'
+```
+
+Without `--json` the output is formatted for a human and its layout is *not* a
+contract — don't parse it.
+
+### Per-group `--help`
+
+`whissle help` lists the groups; `whissle <group> --help` documents one group's
+subcommands and flags without hitting the network:
+
+```bash
+whissle sessions --help
+whissle embed --help
+whissle calls --help
+```
+
+### Exit codes
 
 Every command exits with a code a script can branch on, not a blanket `1`:
 
@@ -405,14 +446,26 @@ Every command exits with a code a script can branch on, not a blanket `1`:
 `whissle whoami` is held to this too: a rejected key exits `2` instead of
 printing a cached workspace and claiming success.
 
-Per-command help is `whissle <group> --help` (e.g. `whissle sessions --help`).
+They're chosen so a CI job can branch without parsing text — `2` means fix the
+key, `4` means top up, and neither is worth a retry:
+
+```bash
+whissle sessions get "$ID" --json > session.json
+case $? in
+  0) echo "ok" ;;
+  2) echo "::error::bad or unscoped key"; exit 1 ;;
+  3) echo "no such session"; exit 0 ;;
+  4) echo "::error::out of credit"; exit 1 ;;
+  *) echo "::error::transient — retrying"; exit 75 ;;
+esac
+```
 
 ## Keys, at a glance
 
 | Key | Where it runs | What it can do |
 |---|---|---|
 | `wsk_…` secret | server / CLI (this tool) | everything your scopes allow — manage the workspace, read all records |
-| `wpk_…` publishable | the browser (`@whissle/agents`) | start a voice session with one agent, nothing else |
+| `wpk_…` publishable | the browser ([`agents_js_sdk`](https://github.com/WhissleAI/agents_js_sdk)) | start a voice session with one agent, nothing else |
 
 **Never put a `wsk_` key in a browser.**
 
@@ -421,6 +474,8 @@ Per-command help is `whissle <group> --help` (e.g. `whissle sessions --help`).
 Plain Node ESM, no build step. `src/api.mjs` is a **single, self-contained
 gateway client** (bearer auth, JSON + multipart, error surfacing, org
 resolution) with no CLI-specific imports — so every HTTP request lives in one
-place, and the client can be lifted into a published `@whissle/sdk` later. Each
+place, and it mirrors the standalone server-side TypeScript client
+([`whissle-sdk`](https://github.com/WhissleAI/whissle-sdk), npm name
+`@whissle/sdk`). Each
 command group is `src/commands/<name>.mjs` exporting `run(sub, args, flags)`;
 `bin/whissle.mjs` parses args and dispatches. See `CLAUDE.md` for the internals.
