@@ -37,8 +37,8 @@ test("the body carries nothing else", () => {
 
 test("it points at the agent's Sessions tab", () => {
   assert.equal(
-    sessionsUrl("https://platform.whissle.ai", "abc"),
-    "https://platform.whissle.ai/agents/abc/calls",
+    sessionsUrl("https://whissle.ai", "abc"),
+    "https://whissle.ai/agents/abc/calls",
   );
   // A self-hosted studioUrl with a trailing slash must not double it.
   assert.equal(sessionsUrl("https://studio.local/", "abc"), "https://studio.local/agents/abc/calls");

@@ -14,7 +14,7 @@ export const DEFAULT_BASE_URL = "https://aws-gateway-backend.whissle.ai/bot";
 // The studio (web UI). Not an API host — the CLI never calls it. It is here so a
 // command can tell you WHERE to go and look at what it just did (e.g. `whissle
 // chat` printing the agent's Sessions tab). Overridable for self-hosted installs.
-export const DEFAULT_STUDIO_URL = "https://platform.whissle.ai";
+export const DEFAULT_STUDIO_URL = "https://whissle.ai";
 
 const DIR = join(homedir(), ".whissle");
 const FILE = join(DIR, "config.json");
@@ -44,6 +44,12 @@ export function saveConfig(patch) {
 // and would keep hitting a dead host after the AWS cutover — auto-migrate it.
 const RETIRED_HOST = /\/\/gateway-backend\.whissle\.ai\b/;
 
+// The studio moved from its own subdomain onto the apex. Same problem, same
+// remedy: platform.whissle.ai is gone (503), and anyone who ran `whissle login`
+// before the move has it pinned in ~/.whissle/config.json — so every studio link
+// the CLI prints would send them to a dead host.
+const RETIRED_STUDIO = /\/\/platform\.whissle\.ai\b/;
+
 /** The effective config, applying env overrides over the stored file. */
 export function loadConfig() {
   const file = readFile();
@@ -52,13 +58,15 @@ export function loadConfig() {
   // Rewrite a stored retired-host baseUrl to the current default (never overrides
   // an explicit WHISSLE_BASE_URL — that stays your escape hatch).
   if (!fromEnv && RETIRED_HOST.test(baseUrl)) baseUrl = DEFAULT_BASE_URL;
+  const studioFromEnv = !!process.env.WHISSLE_STUDIO_URL;
+  let studioUrl = process.env.WHISSLE_STUDIO_URL || file.studioUrl || DEFAULT_STUDIO_URL;
+  if (!studioFromEnv && RETIRED_STUDIO.test(studioUrl)) studioUrl = DEFAULT_STUDIO_URL;
   return {
     apiKey: process.env.WHISSLE_API_KEY || file.apiKey || null,
     baseUrl: baseUrl.replace(/\/+$/, ""),
     // Cached org id (resolved from the key on first use) to save a round-trip.
     orgId: file.orgId || null,
-    studioUrl: (process.env.WHISSLE_STUDIO_URL || file.studioUrl || DEFAULT_STUDIO_URL)
-      .replace(/\/+$/, ""),
+    studioUrl: studioUrl.replace(/\/+$/, ""),
   };
 }
 
