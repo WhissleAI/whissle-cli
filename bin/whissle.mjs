@@ -219,7 +219,7 @@ ${bold("Billing")}
 Global: --json (machine output), --base-url <url>, --key <wsk_…>
 Per-command help: whissle <group> --help   (e.g. whissle sessions --help)
 ${EXIT_CODES_HELP}
-Docs: https://platform.whissle.ai/docs`;
+Docs: https://whissle.ai/docs`;
 
 // Strip SGR colour so help parsing works whether or not chalk is emitting it.
 const PLAIN = (s) => s.replace(/\x1b\[[0-9;]*m/g, "");

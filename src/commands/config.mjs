@@ -17,7 +17,7 @@ async function ask(question, { hidden = false } = {}) {
 export async function run(sub, args, flags) {
   if (sub === "login") {
     out(brand("Whissle") + " — connect your workspace\n");
-    out(dim("Create a workspace secret key in Settings → API keys on platform.whissle.ai.\n"));
+    out(dim("Create a workspace secret key in Settings → API keys on whissle.ai.\n"));
     const key = flags.key || (await ask("Paste your secret key (wsk_…): ", { hidden: true }));
     if (!key.startsWith("wsk_")) out(dim("(heads up: a workspace secret key starts with wsk_)"));
     const baseUrl = flags["base-url"] || DEFAULT_BASE_URL;
