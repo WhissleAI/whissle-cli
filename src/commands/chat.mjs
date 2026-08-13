@@ -19,6 +19,7 @@ import { get, post } from "../api.mjs";
 import { loadConfig } from "../config.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, err, ok, md, dim, brand, bold, spinner, fatal } from "../ui.mjs";
+import { turnFooterLines } from "../turn.mjs";
 
 /** A new per-run session key. Exported for tests. */
 export function newSessionId() {
@@ -39,6 +40,29 @@ export function turnBody({ message, conversationId, sessionId }) {
   };
 }
 
+/**
+ * The agent descriptor, or a usable stand-in.
+ *
+ * This used to be a hard preflight: `GET /api/agents/{id}` and `fatal()` on any
+ * failure. That made `agents:read` a de-facto requirement for chatting, so a key
+ * scoped exactly `chat:invoke` — the correct, least-privilege key for a bot that
+ * only ever talks — could not chat at all, and the error said "Agent not found",
+ * which is the one thing that was not wrong. The lookup is a NICETY: it supplies
+ * a display name and a greeting. When it fails we chat anyway and let the TURN
+ * report the real problem, with the real status code behind it.
+ *
+ * Exported for tests.
+ */
+export async function describeAgent(agentId, fetchAgent) {
+  try {
+    const a = await fetchAgent(agentId);
+    if (a && (a.name || a.id)) return { ...a, known: true };
+  } catch {
+    /* fall through — the turn is the authority, not this */
+  }
+  return { id: agentId, name: agentId, known: false };
+}
+
 /** Where this conversation shows up in the studio. Exported for tests. */
 export function sessionsUrl(studioUrl, agentId) {
   return `${(studioUrl || "").replace(/\/+$/, "")}/agents/${agentId}/calls`;
@@ -49,33 +73,55 @@ export async function run(sub, args, flags) {
   const agentId = sub;
   if (!agentId) fatal("Usage: whissle chat <agent-id>   (find ids with `whissle agents list`)");
 
-  const agent = await get(EP.agents.get(agentId)).catch(() => null);
-  if (!agent) fatal(`Agent ${agentId} not found in this workspace.`);
+  const agent = await describeAgent(agentId, (id) => get(EP.agents.get(id)));
 
   const cfg = loadConfig();
   let sessionId = newSessionId();
+  // `--conversation <id>` RESUMES a thread. Without it every invocation was a
+  // stranger: one-shot never sent a conversation_id at all, so a script could
+  // ask a question and could not ask a follow-up — the second turn had no idea
+  // the first had happened. The id is echoed on every turn so a script can hold
+  // the thread in a variable and pass it back.
+  let conversationId =
+    (typeof flags.conversation === "string" && flags.conversation) ||
+    (typeof flags.c === "string" && flags.c) ||
+    null;
 
   // One-shot mode: `whissle chat <id> -m "message"` (scriptable).
   if (flags.m || flags.message) {
     const stop = spinner("thinking…");
     const r = await post(
       EP.agents.chatTurn(agentId),
-      turnBody({ message: flags.m || flags.message, sessionId }),
+      // A resumed thread is addressed by conversation_id; only an OPENING turn
+      // carries the session key (it is what names the new session row).
+      turnBody({
+        message: flags.m || flags.message,
+        conversationId,
+        sessionId: conversationId ? null : sessionId,
+      }),
     );
     stop();
     if (flags.json) return out(JSON.stringify(r, null, 2));
     out(md(r.reply));
-    return out(dim(`\nSaved to this agent's Sessions: ${sessionsUrl(cfg.studioUrl, agentId)}`));
+    for (const l of turnFooterLines(r, { verbose: flags.verbose, showTools: flags.tools })) out(l);
+    if (r.conversation_id) out(dim(`\n  continue: --conversation ${r.conversation_id}`));
+    return out(dim(`  saved to this agent's Sessions: ${sessionsUrl(cfg.studioUrl, agentId)}`));
   }
 
   out(brand("● ") + bold(agent.name) + dim(`  (${agent.agent_type || "general"})`));
+  if (!agent.known) {
+    // Said, not hidden: we could not read the agent record, so the header above
+    // is the id rather than a name. If the id is genuinely wrong the first turn
+    // will say so with the status code to prove it.
+    out(dim("  (couldn't read this agent's details — needs agents:read; chatting anyway)"));
+  }
   if (agent.greeting) out("\n" + md(agent.greeting));
-  out(dim("\nType a message. /exit to quit, /reset for a fresh thread."));
+  out(dim("\nType a message. /exit to quit, /reset for a fresh thread, /thread for the id."));
   // Said up front, not at the end: a conversation you can go and read is a
   // different thing from a terminal buffer you are about to lose.
   out(dim(`This conversation is saved to ${sessionsUrl(cfg.studioUrl, agentId)}\n`));
 
-  let conversationId = null;
+  if (conversationId) out(dim(`resuming conversation ${conversationId}\n`));
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const prompt = () => {
     process.stdout.write(brand("you › "));
@@ -86,6 +132,10 @@ export async function run(sub, args, flags) {
     const text = line.trim();
     if (!text) return prompt();
     if (text === "/exit" || text === "/quit") return rl.close();
+    if (text === "/thread") {
+      out(dim(conversationId ? `  --conversation ${conversationId}` : "  (no turn yet)"));
+      return prompt();
+    }
     if (text === "/reset") {
       conversationId = null;
       // A new thread must also be a new SESSION, or the next turn resumes the
@@ -104,7 +154,10 @@ export async function run(sub, args, flags) {
       stop();
       conversationId = r.conversation_id || conversationId;
       out("\n" + brand(agent.name + " › ") + md(r.reply));
-      if (r.tools_used?.length) out(dim("  ⚙ used: " + r.tools_used.map((t) => (typeof t === "string" ? t : t.name)).join(", ")));
+      // The turn already carried its tool timeline and its KB citations; the CLI
+      // used to print the tool NAMES and throw both away. A cited answer whose
+      // citations you cannot see is indistinguishable from an uncited one.
+      for (const l of turnFooterLines(r, { verbose: flags.verbose, showTools: flags.tools })) out(l);
       out("");
     } catch (e) {
       stop();
@@ -115,5 +168,11 @@ export async function run(sub, args, flags) {
   });
 
   await new Promise((resolve) => rl.on("close", resolve));
-  out(dim("\nbye."));
+  out(
+    dim(
+      conversationId
+        ? `\nbye.  (resume: whissle chat ${agentId} --conversation ${conversationId})`
+        : "\nbye.",
+    ),
+  );
 }

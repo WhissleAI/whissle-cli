@@ -2,7 +2,8 @@
 
 Run your whole Whissle workspace from the terminal or a script: **onboard**
 (keys, teammates, contacts), **configure** agents, **connect integrations**,
-**place calls and campaigns**, and **pull records** (calls, transcripts, usage,
+**place calls and campaigns**, **talk to your own assistant** (streamed, with its
+tool calls and citations shown), and **pull records** (calls, transcripts, usage,
 analytics) for your own evaluation and logs.
 
 It's the server-side companion to the browser embed SDK
@@ -85,6 +86,9 @@ whissle agents clone <id>                         # duplicate as an undeployed d
 whissle agents types                              # agent-type keys for --type (customer_support, …)
 whissle chat <agent-id>                           # interactive text turn
 whissle chat <agent-id> -m "what are your hours?" # one-shot
+whissle chat <agent-id> -m "and on Sundays?" --conversation <cid>   # continue that thread
+whissle chat <agent-id> -m "…" --tools            # the per-tool timeline, not just names
+whissle chat <agent-id> -m "…" --verbose          # quote the KB passages it cited
 ```
 
 `chat` conversations are **persisted**, not scratch. Each run opens its own
@@ -93,6 +97,72 @@ session (stamped `source: "cli"`) and shows up in the studio under
 the transcript, the tools it called and, if the agent runs a flow, its flow
 trace. The command prints the link when it starts. `/reset` starts a new
 session; set `WHISSLE_STUDIO_URL` if you run a self-hosted studio.
+
+**Multi-turn from a script.** Every turn prints (and `--json` returns) its
+`conversation_id`; pass it back with `--conversation` and the next turn joins the
+same thread, with the same memory:
+
+```bash
+cid=$(whissle chat "$A" -m "I'm calling about order 4471." --json | jq -r .conversation_id)
+whissle chat "$A" -m "When does it ship?" --conversation "$cid" --json | jq -r .reply
+```
+
+**Citations and tool receipts.** A turn returns `evidence` (which document, which
+page, and the passage) and `tool_events` (every tool, its arguments, and whether
+it worked). Both are now rendered: `sources:` always, the full timeline under
+`--tools`, the quoted passages under `--verbose`. A cited answer whose citations
+you cannot see is indistinguishable from a guess.
+
+`chat` needs only `chat:invoke`. It reads the agent record for a name and a
+greeting when it can, and carries on without one when it cannot — a key scoped
+`chat:invoke` and nothing else can chat.
+
+### Your companion (`companion:invoke`)
+
+Every other command here operates on the **workspace**. `whissle companion`
+talks to the assistant that is **yours** — the one that knows your org, your
+persona, your connected integrations and your own documents. It is not an agent
+with a different id: the companion has no agent row, it is assembled per request,
+and a `wsk_` key resolves to **one person**, so this reaches its creator's
+companion and nobody else's.
+
+```bash
+whissle companion                                  # interactive, streamed
+whissle companion -m "what's on my calendar today?"        # one-shot
+whissle companion -m "…" --session <id>            # resume a thread
+whissle companion -m "…" --no-stream               # one buffered JSON body
+whissle companion -m "what is this?" --image screenshot.png
+whissle companion info                             # the card: agent type, your session totals
+whissle companion context                          # the org context it answers from
+whissle companion refresh [--pc-id <live-session>] # re-read your connected integrations
+whissle companion sessions                         # where the history lives
+```
+
+**Streaming is the default.** A `deep_research` turn is up to a minute of work;
+buffered, that is a minute of blank screen. Streamed, the terminal narrates it as
+it happens — the reply arrives token by token and each tool announces itself
+("Searching the web…", "Reading 12 sources…") using the same event payloads a
+voice session receives. `--no-stream` takes the buffered door.
+
+**Threads.** `--session <id>` is the thread handle (the companion's own routes
+key on it; the agent route uses `--conversation` instead — the two genuinely
+differ). A run that mints one prints it to **stderr**, so stdout stays clean for
+a pipe:
+
+```bash
+s=cli-$(uuidgen)
+whissle companion -m "Track the ACME renewal for me." --session "$s"
+whissle companion -m "What did I ask you to track?" --session "$s" --json | jq -r .reply
+```
+
+**Scripting a stream.** `--json` prints the terminal payload only — byte-identical
+to what `--no-stream` returns, so a pipeline never has to strip narration out of
+stdout. `--json --events` prints every frame as NDJSON instead, for a consumer
+that wants the timeline:
+
+```bash
+whissle companion -m "…" --json --events | jq -c 'select(.event=="tool")'
+```
 
 ### Conversation flow (the in-call state machine)
 
@@ -122,13 +192,13 @@ whissle calls start --agent <id> --to +14155550123 \
 whissle calls start --agent <id> --to +14155550123 --vars-file vars.json
 whissle calls campaign --agent <id> --file contacts.csv --to-col to_number \
   --concurrency 3 --delay 1000 (--dry-run | --yes)          # one call per CSV row; each column → a variable
-whissle calls list --agent <id> --limit 50
+whissle calls list --agent <id> --limit 50 [--offset N] [--since 2026-07-01]
 whissle calls get <call-id>                       # status, disposition, summary
 whissle calls result <call-id>                    # the structured outcome envelope (ready, disposition, result)
 whissle calls result <call-id> --wait             # poll until the session finalizes (or a terminal status)
 whissle calls result <call-id> --wait --interval 5 --timeout 300 --json | jq .disposition
 whissle calls transcript <call-id>
-whissle calls audio <call-id>                     # signed recording URL
+whissle calls audio <call-id>                     # recording URL (pre-signed on cloud storage)
 whissle calls export --agent <id> --since 2026-07-01 --format jsonl|csv --out calls.jsonl
 ```
 `campaign` places **real, billed** calls — it refuses without `--dry-run`
@@ -138,6 +208,22 @@ whissle calls export --agent <id> --since 2026-07-01 --format jsonl|csv --out ca
 integration — the n8n node mirrors it) poll `whissle calls result <id> --wait`
 until `ready: true`, then read the disposition and the scorer's full structured
 result. `--wait` exits non-zero on timeout, so it's safe to gate a script on.
+
+`list` pages server-side. It asks the API for the paginating **summary** view, so
+`--limit`, `--offset` and `--since` are applied by the database rather than after
+the fact — on a workspace with 293 calls, `--limit 2 --json` is ~1 KB where it
+used to be ~4.9 MB of full transcripts. `--json` is still a plain array, so
+existing `jq '.[].id'` keeps working; the rows carry the scalar fields plus
+`disposition` and `session_id`. Pass `--full` for the old every-field view
+(transcripts included, and **no paging** — the server does not honour `limit`
+there), or use `calls get` / `calls transcript` / `calls export` for bodies.
+
+`audio` returns whatever the recording actually needs. On cloud storage (every
+hosted workspace) that is a **pre-signed** URL you can hand straight to `curl`.
+On a local-storage install the backend returns a relative API path instead; the
+CLI absolutizes it against your base URL and says plainly that it still needs
+your key, rather than implying a signature that isn't there. A call with no
+recording exits `3`.
 
 ### Sessions (voice calls **and** text threads, one history)
 ```bash
@@ -207,6 +293,39 @@ whissle tools create --file tool.json
 whissle tools update <tool-id> --file tool.json   # edit description / parameters / binding / enabled
 whissle tools delete <tool-id>
 whissle tools attach <tool-id> --agent <agent-id>
+```
+
+#### Your own documents (`whissle kb me`)
+
+An agent's knowledge base is org property: it grounds what that agent says to
+strangers. `whissle kb me` is a different thing that happens to share a scope —
+**your** private library. What you upload belongs to you, is readable only by
+you, and is never folded into any agent's prompt. Your companion reads it on
+your behalf and cites it back.
+
+```bash
+whissle kb me list [--limit N] [--offset N]
+whissle kb me add notes.pdf                      # drop a file on your assistant
+whissle kb me add notes.pdf --session <chat-session-id>   # …and tell that thread it arrived
+whissle kb me get <doc-id> [--out file]          # the original bytes back
+whissle kb me remove <doc-id> --force
+```
+
+`add` prints the ingest **manifest**, not a green tick: how many characters and
+chunks landed, whether it replaced an earlier copy, and — the line that matters —
+whether it is `searchable`. A file we cannot read comes back as an error with the
+reason rather than as an empty document that looks ingested. There is no `--user`
+flag, because no route under `/api/me/kb` takes a user id; the only user in scope
+is the authenticated one, and that is the whole tenancy control.
+
+Then ask about it:
+
+```bash
+whissle kb me add handbook.pdf
+whissle companion -m "What does my handbook say about carry-over leave?" --verbose
+#   sources:
+#   [1] handbook.pdf  p. 12 · your documents · score 0.71
+#       /api/me/kb/…/file
 ```
 
 ### Integrations (the MCP connector store)
@@ -380,12 +499,14 @@ didn't exist when it was made.
 
 | Area | Scopes |
 |---|---|
-| agents, embed, chat | `agents:read` / `agents:write` (versions/rollback/clone too) |
+| agents, embed | `agents:read` / `agents:write` (versions/rollback/clone too) |
+| **chat** (agent text turns) | `chat:invoke` — on its own; `agents:read` only adds the name/greeting |
+| **companion** (your assistant) | `companion:invoke` — resolves to the key's creator, nobody else |
 | calls, campaign (client batch) | `calls:read` / `calls:write` (start/campaign place calls; `result` is read) |
 | **sessions** (voice + text history, traces) | `calls:read` |
 | **actions** (inbox) | `actions:read` / `actions:write` (approve/reject/cancel) |
 | **compliance** | `compliance:read` / `compliance:write` *(write = owner/admin)* |
-| kb | `kb:read` / `kb:write` |
+| kb (agent) and **kb me** (your own) | `kb:read` / `kb:write` |
 | tools | `tools:read` / `tools:write` |
 | connectors | `connectors:read` / `connectors:write` |
 | numbers | `numbers:read` / `numbers:write` (buy spends credits) |
@@ -415,10 +536,19 @@ tables, no truncation — so you can pipe it straight into `jq`:
 whissle sessions list --kind text --json | jq -r '.sessions[].id'
 whissle calls result <id> --wait --json | jq '.result.disposition'
 whissle sessions trace <id> --all --json | jq '.events.events[] | select(.data.failed_over)'
+whissle companion -m "…" --json | jq -r .reply
+whissle kb me list --json | jq -r '.documents[].title'
 ```
 
 Without `--json` the output is formatted for a human and its layout is *not* a
 contract — don't parse it.
+
+**Streamed commands keep the contract.** `whissle companion` streams by default,
+but `--json` still prints exactly one payload — the same body `--no-stream`
+returns — on stdout, with the narration suppressed and the thread id sent to
+**stderr**. Add `--events` when you want the frames themselves, as NDJSON. Errors
+raised *before* a stream opens (bad key, missing scope, no credit) are ordinary
+HTTP and map onto the same exit codes as every other command.
 
 ### Per-group `--help`
 

@@ -57,6 +57,48 @@ export const EP = {
     discardDraft: (id) => `/api/agents/${id}/draft/discard`,
   },
 
+  // ── the COMPANION: the caller's own assistant, not an org agent ─────────────
+  //
+  // Deliberately NOT under `agents`. The companion has no `agents` row — it is
+  // assembled per request from the type config, this org's tool grants and the
+  // CALLER'S persona — so it has its own prefix and a `virtual: true` descriptor
+  // rather than a fake row that everything reading /api/agents would have to
+  // special-case. One scope gates the whole surface: `companion:invoke`.
+  //
+  // A `wsk_` key resolves to ONE PERSON (the member who created it), so these
+  // reach that person's companion and nobody else's — which is also why there is
+  // no user id anywhere in these paths.
+  companion: {
+    // The descriptor: name, agent_type, and the caller's own session totals.
+    get: "/api/companion",
+    // One typed message → a reply. Body field is `text` (NOT `message` — the
+    // agent chat route's field; sending the wrong one is a clean 422).
+    turn: "/api/chat",
+    // The same turn, narrated: text/event-stream, `open` → (delta|tool)* → done,
+    // where `done` carries the byte-identical body `turn` returns.
+    stream: "/api/chat/stream",
+    // Org-wide ambient context the companion answers "what agents do I have?" from.
+    context: "/api/chat/context",
+    // Re-read the caller's connected integrations (and optionally push them into
+    // a LIVE voice session by `pc_id`) without restarting anything.
+    refreshIntegrations: "/api/chat/integrations/refresh",
+  },
+
+  // ── the caller's OWN documents (no agent anywhere in the path) ──────────────
+  //
+  // `/api/me/kb` (migration 157) is one person's private knowledge base: what
+  // they upload belongs to them, is readable only by them, and is never folded
+  // into any agent's prompt. Scopes `kb:read` / `kb:write` — the same two that
+  // govern documents everywhere else. No route takes a user id; the only user in
+  // scope is the authenticated one, which is the entire tenancy control.
+  me: {
+    kb: {
+      base: "/api/me/kb",
+      file: (docId) => `/api/me/kb/${docId}/file`,
+      doc: (docId) => `/api/me/kb/${docId}`,
+    },
+  },
+
   // ── embed SESSIONS: the public surface a browser runs an agent against ──────
   // Distinct from `agents.embed`, which is the agent's embed CONFIG (enable the
   // widget, set allowed origins). These are the runtime: mint a short-lived

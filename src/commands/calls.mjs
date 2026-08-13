@@ -3,8 +3,45 @@
 // for your own evaluation, QA and logs. Requires a key with `calls:read`.
 import { writeFileSync, readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
+import { loadConfig } from "../config.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal, spinner } from "../ui.mjs";
+
+// ── list shape + URL helpers (pure — exported for tests) ─────────────────────
+
+/** A numeric flag, or a default. `--limit` with no value parses as `true`. */
+export function numeric(v, dflt) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : dflt;
+}
+
+/**
+ * `GET /api/calls` answers two shapes: the default view returns a bare ARRAY of
+ * full call rows, and `view=summary` returns `{items, total}`. Both are current
+ * — the array is the frozen back-compat contract — so a client that assumes
+ * either one is broken against half of the deployments it will meet.
+ */
+export function normalizeCallList(r) {
+  if (Array.isArray(r)) return { calls: r, total: null };
+  if (r && Array.isArray(r.items)) return { calls: r.items, total: r.total ?? null };
+  return { calls: [], total: null };
+}
+
+/**
+ * A URL from the API, made fetchable. Cloud storage returns an absolute signed
+ * URL and is passed through untouched; a local-storage install returns a
+ * relative API path, which is only meaningful against the base URL we called.
+ */
+export function absolutizeUrl(url, baseUrl) {
+  if (!url || typeof url !== "string") return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${String(baseUrl || "").replace(/\/+$/, "")}/${url.replace(/^\/+/, "")}`;
+}
+
+/** Does this URL carry its own authorization (a pre-signed query)? */
+export function isSigned(url) {
+  return /[?&](X-Amz-Signature|Signature|token|X-Goog-Signature)=/i.test(url || "");
+}
 
 // ── result polling ───────────────────────────────────────────────────────────
 // A session has a final result (or never will) once `ready` flips true or the
@@ -177,13 +214,44 @@ export async function run(sub, args, flags) {
   }
 
   if (!sub || sub === "list") {
-    const calls = await get(EP.calls.list, {
-      query: { agent_id: flags.agent, limit: flags.limit || 25, status: flags.status },
+    // `view=summary` is not an optimisation, it is the only view that PAGINATES.
+    // The default view of GET /api/calls is documented as byte-identical-forever
+    // for its existing callers, and it ignores `limit` entirely: on a workspace
+    // with 293 calls, `--limit 5` returned all 293 — 3.2 MB of full transcripts
+    // and metadata — to render a five-row table. The summary view honours
+    // limit/offset/since and carries every column this table shows plus
+    // `disposition` and `total`, so nothing is lost by asking for it.
+    // `--full` asks for the old default view: every column, including the
+    // transcript, and NO pagination (the server ignores `limit` there). Kept as
+    // an explicit opt-in for anyone whose script read `.transcript` straight out
+    // of the list — they lose paging, which is the trade the server is making,
+    // and now they choose it instead of getting it by surprise.
+    const full = !!flags.full;
+    const r = await get(EP.calls.list, {
+      query: full
+        ? { agent_id: flags.agent }
+        : {
+            view: "summary",
+            agent_id: flags.agent,
+            limit: numeric(flags.limit, 25),
+            offset: numeric(flags.offset, 0),
+            since: flags.since,
+          },
     });
-    if (flags.json) return printJson(calls);
+    // Tolerate both shapes: an older gateway with no summary view answers with
+    // the bare array, and a client that hard-assumed `{items}` would print
+    // nothing at all against it.
+    const { calls, total } = normalizeCallList(r);
+    // `status` has no server-side filter on this route; filtering here is honest
+    // about what it is, and no longer silently returns "everything" instead.
+    const rows = flags.status ? calls.filter((c) => c.status === flags.status) : calls;
+    // `--json` stays an ARRAY, which is the shape it has always been and what
+    // every `jq '.[].id'` in the wild expects. The count moves to the human
+    // footer rather than wrapping the payload in an envelope and breaking them.
+    if (flags.json) return printJson(rows);
     table(
       ["ID", "AGENT", "STATUS", "DUR", "WHEN"],
-      (calls || []).map((c) => [
+      rows.map((c) => [
         c.id,
         trunc(c.agent_name || c.agent_id || "—", 20),
         c.status || "—",
@@ -191,7 +259,14 @@ export async function run(sub, args, flags) {
         (c.created_at || "").slice(0, 16).replace("T", " "),
       ]),
     );
-    out(dim(`\n  ${(calls || []).length} call(s)  ·  filter with --agent <id> --status <s> --limit N`));
+    out(
+      dim(
+        `\n  ${rows.length} call(s)${total != null ? ` of ${total}` : ""}  ·  ` +
+          (full
+            ? "--full: every field, no paging"
+            : "--agent <id> --status <s> --limit N --offset N --since ISO --full"),
+      ),
+    );
     return;
   }
 
@@ -247,17 +322,38 @@ export async function run(sub, args, flags) {
   if (sub === "audio") {
     const id = args[0] || fatal("Usage: whissle calls audio <call-id>");
     const r = await get(EP.calls.audioUrl(id));
-    if (flags.json) return printJson(r);
-    out(r.url || dim("(no recording available)"));
+    // On cloud storage (S3/GCS — every hosted workspace) this is a pre-signed
+    // URL you can hand straight to curl. On a LOCAL-storage install the backend
+    // answers with the relative `/api/calls/{id}/audio/file` path instead, which
+    // printed on its own is not fetchable by anything — so absolutize it against
+    // the configured base URL. It still needs your key, and we say so rather
+    // than implying the signature is in the URL when it isn't.
+    const url = absolutizeUrl(r?.url, loadConfig().baseUrl);
+    if (flags.json) return printJson({ ...r, url });
+    if (!url) return out(dim("(no recording available)"));
+    out(url);
+    if (!isSigned(url)) out(dim("  (not pre-signed — fetch it with: Authorization: Bearer $WHISSLE_API_KEY)"));
     return;
   }
 
   if (sub === "export") {
     // Bulk-pull calls + transcripts for offline evaluation. JSONL (default) or CSV.
     const fmt = (flags.format || "jsonl").toLowerCase();
-    const list = await get(EP.calls.list, { query: { agent_id: flags.agent, limit: flags.limit || 1000, status: flags.status } });
-    let calls = list || [];
+    // Summary view + server-side `since`: the export fetches each call in full
+    // anyway, so pulling every transcript TWICE — once in the list, once per
+    // row — was pure waste, and `--limit` on the default view did nothing at all.
+    const list = await get(EP.calls.list, {
+      query: {
+        view: "summary",
+        agent_id: flags.agent,
+        limit: numeric(flags.limit, 1000),
+        since: flags.since,
+      },
+    });
+    let { calls } = normalizeCallList(list);
+    // Kept for the array-shaped fallback, where `since` was never applied.
     if (flags.since) calls = calls.filter((c) => (c.created_at || "") >= flags.since);
+    if (flags.status) calls = calls.filter((c) => c.status === flags.status);
 
     let output;
     if (fmt === "csv") {

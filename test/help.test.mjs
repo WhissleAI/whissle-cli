@@ -3,12 +3,13 @@
 // --help` tried to talk to the API instead of printing anything.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { helpFor } from "../bin/whissle.mjs";
 
 // Every group the entry point can dispatch to. Kept as a literal list on
 // purpose: if a group is added without a line in HELP, this test says so.
 const GROUPS = [
-  "agents", "chat", "calls", "sessions", "actions", "compliance", "kb", "tools",
+  "agents", "chat", "companion", "calls", "sessions", "actions", "compliance", "kb", "tools",
   "connectors", "numbers", "integrations", "embed", "models", "keys", "team",
   "customers", "appointments", "sms", "analytics", "campaigns", "meetings",
   "memory", "usage", "config",
@@ -67,4 +68,24 @@ test("an unknown group falls back to the whole command map", () => {
   const help = helpFor("definitely-not-a-group");
   assert.match(help, /whissle agents list/);
   assert.match(help, /whissle sessions list/);
+});
+
+test("the group list here matches what the entry point can actually dispatch", () => {
+  // The failure this catches: a group registered in GROUPS but never given a
+  // line in HELP, so `whissle <group> --help` silently prints the entire map.
+  const src = readFileSync(new URL("../bin/whissle.mjs", import.meta.url), "utf8");
+  const block = src.slice(src.indexOf("const GROUPS = {"), src.indexOf("};", src.indexOf("const GROUPS = {")));
+  const dispatchable = [...block.matchAll(/^\s{2}([a-z]+):/gm)].map((m) => m[1]);
+  assert.deepEqual([...dispatchable].sort(), [...GROUPS].sort());
+});
+
+test("companion help names the scope and the streaming opt-out", () => {
+  const help = helpFor("companion");
+  assert.match(help, /companion:invoke/);
+  assert.match(help, /--no-stream/);
+  assert.match(help, /--session/);
+});
+
+test("kb help covers the personal knowledge base, not just an agent's", () => {
+  assert.match(helpFor("kb"), /whissle kb me list/);
 });
