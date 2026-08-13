@@ -13,6 +13,7 @@ import { err, out, brand, bold, dim } from "../src/ui.mjs";
 const GROUPS = {
   agents: () => import("../src/commands/agents.mjs"),
   chat: () => import("../src/commands/chat.mjs"),
+  companion: () => import("../src/commands/companion.mjs"),
   calls: () => import("../src/commands/calls.mjs"),
   sessions: () => import("../src/commands/sessions.mjs"),
   actions: () => import("../src/commands/actions.mjs"),
@@ -92,19 +93,33 @@ ${bold("Conversation flow")}  ${dim("— the in-call state machine (flow-based, 
 ${bold("Run an agent")}
   whissle chat <agent-id>             interactive text conversation
   whissle chat <agent-id> -m "hi"     one-shot (scriptable)
+  whissle chat <agent-id> -m "and?" --conversation <cid>   continue a thread
+                      ${dim("(every turn echoes its --conversation id; --tools shows the")}
+                      ${dim(" per-tool timeline, --verbose quotes the KB passages cited)")}
   ${dim("(browser voice embed → the @whissle/agents JS SDK + a publishable wpk_ key)")}
+
+${bold("Your companion")}  ${dim("(needs companion:invoke)")}  ${dim("— YOUR assistant, not an org agent")}
+  whissle companion                   interactive; streams the turn as it happens
+  whissle companion -m "what's on my calendar?"        one-shot (scriptable)
+  whissle companion -m "…" --session <id>   resume a thread (the id is echoed)
+  whissle companion -m "…" --no-stream      one buffered JSON body instead
+  whissle companion -m "…" --json [--events]   payload only | NDJSON of every frame
+  whissle companion -m "what is this?" --image shot.png    png/jpg/webp
+  whissle companion info | context | refresh [--pc-id …] | sessions
+  ${dim("(a wsk_ key resolves to ONE person — this reaches its creator's companion only)")}
 
 ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
   whissle calls start --agent <id> --to <+1…> [--from <+1…>]
                       [--var key=value ...] [--vars-file vars.json]   one outbound call
   whissle calls campaign --agent <id> --file contacts.csv [--to-col to_number]
                       [--concurrency 3] [--delay 1000] (--dry-run | --yes)   batch calls, one per CSV row
-  whissle calls list [--agent <id>] [--status s] [--limit N]
+  whissle calls list [--agent <id>] [--status s] [--limit N] [--offset N] [--since ISO]
+                      [--full]   ${dim("every field + transcripts; the server ignores --limit there")}
   whissle calls get <id>
   whissle calls result <id> [--wait] [--interval 5] [--timeout 300]   outcome envelope
                       (disposition + structured result; --wait polls until finalized)
   whissle calls transcript <id>
-  whissle calls audio <id>            signed recording URL
+  whissle calls audio <id>            recording URL (pre-signed on cloud storage)
   whissle calls export [--agent <id>] [--since 2026-07-01] [--format jsonl|csv] [--out f]
 
 ${bold("Sessions")}  ${dim("(needs calls:read)")}  ${dim("— voice calls AND text threads, one history")}
@@ -120,6 +135,10 @@ ${bold("Knowledge & tools")}
   whissle kb add <agent-id> [--text … | --file f.pdf | --url https://…]
   whissle kb update <agent-id> <doc-id> [--title …] [--text …]   re-sync in place (reindexes)
   whissle kb remove <agent-id> <doc-id> --force
+  whissle kb me list [--limit N] [--offset N]     ${dim("YOUR documents — no agent reads these")}
+  whissle kb me add <file> [--session <chat-session-id>]   drop a file on your assistant
+  whissle kb me get <doc-id> [--out f]            the original bytes back
+  whissle kb me remove <doc-id> --force
   whissle tools list
   whissle tools create --file tool.json
   whissle tools update <tool-id> --file tool.json

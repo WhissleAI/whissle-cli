@@ -1,6 +1,6 @@
 {
   "name": "@whissle/cli",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Command-line interface for the Whissle Voice Agents platform — configure agents, run them, and pull your calls, transcripts and usage for your own evaluation.",
   "type": "module",
   "license": "MIT",

@@ -9,6 +9,7 @@ import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { loadConfig, saveConfig } from "./config.mjs";
 import { EP } from "./endpoints.mjs";
+import { sseFrames } from "./sse.mjs";
 
 export class ApiError extends Error {
   constructor(status, message, body, { code = null } = {}) {
@@ -92,6 +93,34 @@ export async function upload(path, { filePath, fileField = "file", fields = {}, 
   const parsed = await parse(res);
   if (!res.ok) fail(res, parsed);
   return parsed;
+}
+
+/**
+ * POST a JSON body and consume a `text/event-stream` response as frames.
+ *
+ * Errors BEFORE the stream opens are ordinary HTTP and are raised exactly like
+ * `post()` — auth, out-of-credit and a rejected input are status codes, so they
+ * still map onto the documented exit codes. Once the stream is open, everything
+ * is an event and the transport stops having opinions.
+ *
+ * Returns an async iterable of `{event, data}`.
+ */
+export async function postStream(path, body, { cfg = loadConfig(), signal } = {}) {
+  const res = await fetch(cfg.baseUrl + path, {
+    method: "POST",
+    headers: {
+      ...authHeader(cfg),
+      "Content-Type": "application/json",
+      // Not what selects the stream — the gateway does that by PATH, because
+      // `Accept` crosses hops that may rewrite it. Sent for honesty only.
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) fail(res, await parse(res));
+  if (!res.body) throw new ApiError(res.status, "The server returned no stream body.", null);
+  return sseFrames(res.body);
 }
 
 /** Raw response (for binary bodies like TTS audio). Returns the Response. */
