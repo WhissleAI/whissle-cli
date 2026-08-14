@@ -3,13 +3,20 @@
 // terminal-native way to test/drive an agent's brain + tools.)
 //
 // Every turn goes through POST /api/agents/{id}/chat/turn, which PERSISTS the
-// conversation — so a CLI session is real history, not a scratch pad. Two things
-// make that history legible in the studio's Sessions tab:
+// conversation — so a CLI session is real history, not a scratch pad. Two fields
+// make that history legible in the studio's Sessions tab, and the server models
+// and consumes both (`routes/agents.py`, `ChatTurnBody.session_id` /
+// `ChatTurnBody.source`):
 //
-//   * `source: "cli"` — the origin stamp. Without it a CLI run, an n8n step and
-//     a partner backend are indistinguishable: same org key, same endpoint.
-//   * `session_id` — a fresh id per invocation, so THIS run is its own session
-//     row instead of being appended to one ever-growing thread per API key.
+//   * `source: "cli"` — the origin stamp. Honoured for API-key callers only (a
+//     browser session IS the studio and cannot relabel itself). Without it a CLI
+//     run, an n8n step and a partner backend are indistinguishable: same org
+//     key, same endpoint, all filed as plain `api`.
+//   * `session_id` — a fresh id per invocation. The server only reaches for it
+//     when it is OPENING a thread, and what it opens is keyed
+//     `key:<api-key-id>:<session_id>`; with no session key that degrades to
+//     `key:<api-key-id>`, i.e. ONE ever-growing thread per key, so a CLI run
+//     from Tuesday and a benchmark from Friday land in the same session row.
 //
 // Both are optional on the server; an older gateway ignores them and behaves
 // exactly as it did before.
@@ -27,9 +34,19 @@ export function newSessionId() {
 }
 
 /**
- * The turn body. `conversation_id` (once the server has given us one) is the
- * authoritative thread handle; `session_id` is what the FIRST turn uses to open
- * a thread of its own. Exported for tests.
+ * The turn body. Exported for tests.
+ *
+ * BOTH handles ride on EVERY turn, and the asymmetry is the server's, not ours:
+ * `conversation_id` is looked up first and wins outright when it resolves —
+ * `session_id` is then never read. It is only consulted on the branch that opens
+ * a NEW thread.
+ *
+ * Which is exactly why it must not be withheld on a turn that carries a
+ * `conversation_id`. A `--conversation` id that is stale, mistyped, or from
+ * another workspace does not fail the turn: the server declines to adopt it and
+ * opens a thread instead — and a turn that dropped its session key opens the
+ * per-key catch-all thread, which is the one outcome `session_id` exists to
+ * prevent. Sending both costs nothing and is correct on every branch.
  */
 export function turnBody({ message, conversationId, sessionId }) {
   return {
@@ -92,13 +109,11 @@ export async function run(sub, args, flags) {
     const stop = spinner("thinking…");
     const r = await post(
       EP.agents.chatTurn(agentId),
-      // A resumed thread is addressed by conversation_id; only an OPENING turn
-      // carries the session key (it is what names the new session row).
-      turnBody({
-        message: flags.m || flags.message,
-        conversationId,
-        sessionId: conversationId ? null : sessionId,
-      }),
+      // Both handles, always — see `turnBody`. A resumed thread is addressed by
+      // conversation_id and the session key is ignored; a `--conversation` the
+      // server declines to adopt falls back to it rather than to the per-key
+      // catch-all thread.
+      turnBody({ message: flags.m || flags.message, conversationId, sessionId }),
     );
     stop();
     if (flags.json) return out(JSON.stringify(r, null, 2));

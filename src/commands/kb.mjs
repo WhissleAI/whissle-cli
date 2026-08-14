@@ -16,7 +16,7 @@ import { writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { del, get, patch, post, raw, upload } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, warn, table, trunc, dim, kv, printJson, fatal } from "../ui.mjs";
+import { out, ok, warn, table, trunc, dim, kv, printJson, printMutation, fatal } from "../ui.mjs";
 
 /**
  * The filename to write a downloaded document to.
@@ -183,7 +183,8 @@ export async function run(sub, args, flags) {
     if (!flags.force) {
       fatal(`This deletes the document AND disarms any lookup tool built from it. Re-run with --force.`);
     }
-    await del(EP.agents.kb.doc(agentId, docId));
+    const r = await del(EP.agents.kb.doc(agentId, docId));
+    if (flags.json) return printMutation(r, { deleted: docId });
     ok(`Removed document ${docId}.`);
     return;
   }

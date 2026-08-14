@@ -5,7 +5,7 @@
 // A2P/consent paper trail: the delivery log, suppressed numbers, and consent records.
 import { get, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
@@ -54,7 +54,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "opt-in") {
     const phone = args[0] || fatal("Usage: whissle sms opt-in <+1…>   (re-enable messaging for a suppressed number)");
-    await del(EP.sms.optOut(org, encodeURIComponent(phone)));
+    const r = await del(EP.sms.optOut(org, encodeURIComponent(phone)));
+    if (flags.json) return printMutation(r, { opted_in: phone });
     ok(`Re-enabled messaging for ${phone}`);
     return;
   }

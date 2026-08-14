@@ -3,6 +3,7 @@
 // user where to find it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { describeAgent, newSessionId, turnBody, sessionsUrl } from "../src/commands/chat.mjs";
 import { EP } from "../src/endpoints.mjs";
@@ -78,10 +79,41 @@ test("an empty agent body is treated as unreadable, not as a nameless agent", as
   assert.equal((await describeAgent("abc", async () => null)).known, false);
 });
 
-test("a resumed one-shot addresses the thread and drops the opening session key", () => {
-  // Both together is contradictory: session_id is what NAMES a new session row,
-  // and a resumed turn is not opening one.
-  const b = turnBody({ message: "and?", conversationId: "c1", sessionId: null });
+// ── the session key must survive a resume ────────────────────────────────────
+
+test("a resumed turn carries BOTH handles", () => {
+  // Not contradictory, and the asymmetry is the server's: `conversation_id` is
+  // looked up first and wins outright when it resolves, so `session_id` is
+  // simply not read on that branch. It IS read on the other branch — the one a
+  // stale, mistyped or foreign `--conversation` falls onto, because the server
+  // declines to adopt an id it cannot resolve and opens a thread instead.
+  //
+  // Withholding the session key there (what the one-shot path used to do) is
+  // what dropped that turn into `key:<api-key-id>` — the single ever-growing
+  // per-key thread `session_id` exists to prevent.
+  const b = turnBody({ message: "and?", conversationId: "c1", sessionId: "s1" });
   assert.equal(b.conversation_id, "c1");
-  assert.equal("session_id" in b, false);
+  assert.equal(b.session_id, "s1");
+});
+
+test("the one-shot path sends the session key even when resuming", async () => {
+  // The regression this pins is invisible in `turnBody` alone — it was the CALL
+  // SITE that passed `sessionId: conversationId ? null : sessionId`.
+  const src = await readFile(new URL("../src/commands/chat.mjs", import.meta.url), "utf8");
+  assert.equal(
+    /sessionId:\s*conversationId\s*\?/.test(src),
+    false,
+    "chat.mjs must not withhold the session key on a resumed turn",
+  );
+  // Both call sites (one-shot and REPL — `message:` with a value, as against the
+  // declaration's bare `message,`) pass the same handles through, unconditionally.
+  const callSites = src.match(/turnBody\(\{ message: [^}]*\}\)/g) || [];
+  assert.equal(callSites.length, 2, `expected 2 turnBody call sites, saw ${callSites.length}`);
+  for (const site of callSites) assert.match(site, /conversationId,\s*sessionId\s*\}/);
+});
+
+test("the session key is short enough for the column that stores it", () => {
+  // `ChatTurnBody.session_id` is `Field(default=None, max_length=64)`; a longer
+  // one is a 422, not a truncation.
+  assert.ok(newSessionId().length <= 64);
 });

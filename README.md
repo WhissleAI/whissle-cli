@@ -6,29 +6,45 @@ Run your whole Whissle workspace from the terminal or a script: **onboard**
 tool calls and citations shown), and **pull records** (calls, transcripts, usage,
 analytics) for your own evaluation and logs.
 
-It's the server-side companion to the browser embed SDK
-([`agents_js_sdk`](https://github.com/WhissleAI/agents_js_sdk), npm name
-`@whissle/agents`, publishing shortly): where the SDK *runs* one agent in a web
-page with a publishable `wpk_` key, this CLI *manages* the workspace with a
-secret `wsk_` key. Plain Node ESM, no build step, and every command takes
-`--json` for scripting.
+Plain Node ESM, no build step, and every command takes `--json` for scripting.
+
+### Which package do I want?
+
+We publish four clients and they are routinely confused for each other. They are
+not alternatives — most integrations use two.
+
+| Package | Where it runs | Key | What it's for |
+|---|---|---|---|
+| **[`@whissle/cli`](https://www.npmjs.com/package/@whissle/cli)** (this one) | your terminal, a CI job | `wsk_` workspace **secret** | the control plane: configure, run, and read back the workspace |
+| **[`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)** | the **browser** | `wpk_` **publishable** | embed a live voice agent in a web page |
+| **[`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk)** | server-side **Node** | `wsk_` workspace **secret** | the same control plane from your own backend — never in client code |
+| **[`whissle_sdk`](https://github.com/WhissleAI/whissle-python)** | server-side **Python** | `wsk_` workspace **secret** | the same, for Python jobs, evals and notebooks |
+
+A typical embed uses two of them: `@whissle/sdk` (or this CLI) on your server to
+mint each visitor a short-lived session token, and `@whissle/agents` in the page
+to open the session with it. **A `wsk_` key must never reach a browser.**
 
 ## Install
 
-**Not on npm yet.** The package is `@whissle/cli` and publishes shortly; until it
-does, `npm i -g @whissle/cli` will 404. Install from git:
+```bash
+npm i -g @whissle/cli
+whissle version
+```
+
+`main` in this repo runs ahead of the published release, so if you want what this
+README documents before the next publish, install from git:
+
+```bash
+npm i -g github:WhissleAI/whissle-cli
+```
+
+…or clone it, since there is nothing to build:
 
 ```bash
 git clone https://github.com/WhissleAI/whissle-cli
 cd whissle-cli
 npm install
 npm link            # optional — puts `whissle` on your PATH
-```
-
-Or install straight from the repo without cloning:
-
-```bash
-npm i -g github:WhissleAI/whissle-cli
 ```
 
 Requires Node 18+. No build step — it's plain ESM, so what you clone is what runs.
@@ -164,6 +180,47 @@ that wants the timeline:
 whissle companion -m "…" --json --events | jq -c 'select(.event=="tool")'
 ```
 
+#### Everyday tools
+
+Nine small tools ship on the companion agent type, alongside the workspace ones.
+They are declared on the type, so they are also what an **anonymous visitor**
+gets when the agent embedded in your page is of type `companion` — no sign-in,
+no workspace data. Ask the gateway rather than trusting this list:
+
+```bash
+whissle agents types --json | jq -r '.[] | select(.key=="companion") | .tools[]'
+```
+
+Three of them behave in ways worth knowing before you rely on them:
+
+* **`get_crypto_price` and `get_stock_price` fail closed.** Without
+  `COINGECKO_API_KEY` / `TWELVEDATA_API_KEY` on the deployment they *refuse* —
+  they do not fall back to searching the web for a number and reading it out. A
+  price the model found in a blog post is worse than no price. (The refusal is
+  the tool's; nothing stops a model from calling `search_web` next, so the
+  refusal text tells it not to.)
+* **`get_weather` never guesses a location.** `location` is required, and with no
+  location the tool comes back telling the model to *ask* — there is no IP
+  geolocation and no default city.
+* **`get_news` is the one tool with no required argument**, deliberately: "the
+  news" has an honest default (the top stories), where a default *city* or a
+  default *ticker* would be an invention.
+
+The rest — `calculate`, `convert_units`, `get_time`, `convert_currency`,
+`define_word` — need no configuration. `convert_currency` walks three keyless
+rate sources and refuses if none answers rather than quoting a rate from memory.
+
+#### External MCP tools are refused to anonymous callers
+
+Tools reached through the [MCP connector store](#integrations-the-mcp-connector-store)
+run against **somebody else's server**. An anonymous visitor — an embed widget, a
+public chat — cannot call them. The refusal is by **provenance, not by name**:
+a tool is allowed for an anonymous caller only if it is a built-in or one of your
+own workspace's declared tools, so a tool whose origin cannot be established
+fails closed, and a new remote tool is refused the day it appears rather than the
+day someone remembers to add it to a list. A signed-in member, a live phone call
+and a `wsk_` key are unaffected.
+
 ### Conversation flow (the in-call state machine)
 
 An agent can carry an optional **flow**: a per-agent state machine that steers a
@@ -248,12 +305,28 @@ place that shows:
 * **which provider and model actually answered**, with a loud marker when the
   turn **failed over** from the primary vendor to the fallback — nothing else in
   the product surfaces that to a human, and the caller never sees it;
-* per-turn latency, hop count, token cost (input / output / cached), and any
-  action-integrity catch where the reply claimed something no tool did.
+* per-turn latency, hop count and **token counts** (input / output / cached), and
+  any action-integrity catch where the reply claimed something no tool did.
 
-Voice sessions trace too (`/api/calls/{id}/trace` under the hood — endpointing,
-barge-in, shadow drafts, flow state). Voice-only signal families are named as
-inapplicable on a text session rather than shown as zero.
+  Counts, not cost: the trace carries `input_tokens` / `output_tokens` /
+  `cached_input_tokens` and no currency figure anywhere. For money, read
+  `whissle usage`.
+
+**Voice and text traces are not the same payload**, and the difference is worth
+knowing before you build a dashboard on one. Both answer
+`{call_id, flow, signals, events}`. A **text** trace is *derived* from the
+persisted thread, so its `signals.turns[]` carry `provider`, `model`,
+`failed_over`, `latency_ms`, `hops` and the token counts, and its voice-only
+signal families are listed under `signals.unavailable` with a reason each —
+rather than shown as zero, which would read as "we measured it and it was
+silent". A **voice** trace is *recorded* live: `signals.turns[]` are acoustic
+(emotion, intent, age/gender estimates, filler counts, WPM), and provider/model
+appear only where the live recorder captured an `llm_call` event, in `events`.
+
+```bash
+whissle sessions trace <id> --json | jq '.signals.turns[] | {provider, model, failed_over}'
+whissle sessions trace <id> --json | jq '.signals.unavailable | keys'   # text only
+```
 
 ### Action inbox (human-in-the-loop approvals)
 ```bash
@@ -533,7 +606,7 @@ Every command takes `--json` and prints the raw API payload — no colour, no
 tables, no truncation — so you can pipe it straight into `jq`:
 
 ```bash
-whissle sessions list --kind text --json | jq -r '.sessions[].id'
+whissle sessions list --kind text --json | jq -r '.items[].id'   # NOT .sessions[]
 whissle calls result <id> --wait --json | jq '.result.disposition'
 whissle sessions trace <id> --all --json | jq '.events.events[] | select(.data.failed_over)'
 whissle companion -m "…" --json | jq -r .reply
@@ -542,6 +615,25 @@ whissle kb me list --json | jq -r '.documents[].title'
 
 Without `--json` the output is formatted for a human and its layout is *not* a
 contract — don't parse it.
+
+**A write that answers `204` still answers in JSON.** Half the mutating routes on
+this API return no body — every `delete`, and the `attach`/`detach` pairs. Those
+commands print a minimal acknowledgement (`{"deleted": "<id>"}`,
+`{"attached": "<id>", "agent_id": "<id>"}`) rather than a green tick, so a
+pipeline never receives an empty stream where JSON was promised:
+
+```bash
+whissle tools delete <tool-id> --json          # → {"deleted": "<tool-id>"}
+whissle integrations detach <id> --agent <a> --json
+```
+
+**Where the payload is not literally one server response**, the command says so
+in its shape rather than quietly reshaping the server's: `whissle usage --json`
+merges the wallet with its ledger (and adds `ledger_error` if the ledger could
+not be read); `whissle calls audio --json` returns the server body **verbatim**
+plus a `resolved_url` field, rather than overwriting `url`; `whissle calls
+campaign --json` returns one row per CSV line, each carrying the server's own
+`result` payload.
 
 **Streamed commands keep the contract.** `whissle companion` streams by default,
 but `--json` still prints exactly one payload — the same body `--no-stream`
@@ -576,6 +668,15 @@ Every command exits with a code a script can branch on, not a blanket `1`:
 `whissle whoami` is held to this too: a rejected key exits `2` instead of
 printing a cached workspace and claiming success.
 
+**Batch commands report the batch.** `whissle calls campaign` and `whissle calls
+export` used to exit `0` whatever happened to the individual rows — so 500 calls
+refused for credit printed `✓ Campaign done — 0/500 placed` and a cron job never
+alerted. They now exit non-zero whenever any row failed, with the code every
+failure agrees on (all `402` → `4`) or `1` when they disagree. `calls export`
+additionally **leaves out** any call it could not fetch in full and says so on
+stderr, instead of writing a row with an empty transcript that is
+indistinguishable from a call nobody spoke on.
+
 They're chosen so a CI job can branch without parsing text — `2` means fix the
 key, `4` means top up, and neither is worth a retry:
 
@@ -594,8 +695,8 @@ esac
 
 | Key | Where it runs | What it can do |
 |---|---|---|
-| `wsk_…` secret | server / CLI (this tool) | everything your scopes allow — manage the workspace, read all records |
-| `wpk_…` publishable | the browser ([`agents_js_sdk`](https://github.com/WhissleAI/agents_js_sdk)) | start a voice session with one agent, nothing else |
+| `wsk_…` secret | server / CLI (this tool), [`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk), [`whissle_sdk`](https://github.com/WhissleAI/whissle-python) | everything your scopes allow — manage the workspace, read all records |
+| `wpk_…` publishable | the browser ([`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)) | start a voice session with one agent, nothing else |
 
 **Never put a `wsk_` key in a browser.**
 

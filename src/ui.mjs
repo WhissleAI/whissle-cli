@@ -4,6 +4,7 @@
 import chalk from "chalk";
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
+import { EXIT } from "./exit.mjs";
 
 marked.use(markedTerminal({ reflowText: true, width: Math.min(process.stdout.columns || 80, 100) }));
 
@@ -17,6 +18,21 @@ export const err = (s = "") => process.stderr.write(s + "\n");
 
 export function printJson(obj) {
   out(JSON.stringify(obj, null, 2));
+}
+
+/**
+ * `--json` for a MUTATION: the server's payload when there is one, an explicit
+ * acknowledgement when there isn't.
+ *
+ * Half the write routes on this API answer `204 No Content` — every DELETE, and
+ * the attach/detach POSTs. Those commands used to print a green `✓` line and
+ * nothing else under `--json`, so a script that piped them into `jq` got an
+ * empty stream and failed at EOF, and one that captured stdout got a prose
+ * sentence where JSON was promised. A route with nothing to say still has to say
+ * it in the documented shape.
+ */
+export function printMutation(payload, ack) {
+  printJson(payload && typeof payload === "object" ? payload : ack);
 }
 
 /** Render markdown (agent replies, transcripts) to the terminal. */
@@ -64,9 +80,18 @@ export function ok(msg) {
 export function warn(msg) {
   err(chalk.yellow("! ") + msg);
 }
-export function fatal(msg) {
+/**
+ * Print a message and stop, with an exit code a script can branch on.
+ *
+ * The code is a PARAMETER because the commands that catch an ApiError to say
+ * something kinder about it — "no such connector (already removed?)" — used to
+ * throw the status away with it: a 404 that would have exited 3 through the
+ * top-level handler exited 1 the moment a command improved its wording. Pass
+ * `exitCodeFor(e)` whenever you are re-reporting a caught API failure.
+ */
+export function fatal(msg, code = EXIT.GENERIC) {
   err(chalk.red("✗ ") + msg);
-  process.exit(1);
+  process.exit(code);
 }
 
 /** A minimal spinner for slow calls. Returns a stop() fn. */

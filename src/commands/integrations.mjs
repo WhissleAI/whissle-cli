@@ -6,7 +6,7 @@
 // Org-scoped: /api/orgs/{org}/integrations.
 import { get, post, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 // The list endpoint returns a bare array (or {integrations:[…]} defensively).
 const asList = (r) => (Array.isArray(r) ? r : r?.integrations || []);
@@ -109,7 +109,8 @@ export async function run(sub, args, flags) {
   if (sub === "attach") {
     const id = args[0] || fatal("Usage: whissle integrations attach <id> --agent <agent-id>");
     if (!flags.agent) fatal("--agent <agent-id> is required.");
-    await post(EP.integrations.attach(org, id), { agent_id: flags.agent });
+    const r = await post(EP.integrations.attach(org, id), { agent_id: flags.agent });
+    if (flags.json) return printMutation(r, { attached: id, agent_id: flags.agent });
     ok(`Attached integration ${id} → agent ${flags.agent} (its tools are now available)`);
     return;
   }
@@ -117,14 +118,16 @@ export async function run(sub, args, flags) {
   if (sub === "detach") {
     const id = args[0] || fatal("Usage: whissle integrations detach <id> --agent <agent-id>");
     if (!flags.agent) fatal("--agent <agent-id> is required.");
-    await post(EP.integrations.detach(org, id), { agent_id: flags.agent });
+    const r = await post(EP.integrations.detach(org, id), { agent_id: flags.agent });
+    if (flags.json) return printMutation(r, { detached: id, agent_id: flags.agent });
     ok(`Detached integration ${id} from agent ${flags.agent}`);
     return;
   }
 
   if (sub === "remove") {
     const id = args[0] || fatal("Usage: whissle integrations remove <id>");
-    await del(EP.integrations.remove(org, id));
+    const r = await del(EP.integrations.remove(org, id));
+    if (flags.json) return printMutation(r, { removed: id });
     ok(`Removed integration ${id}`);
     return;
   }

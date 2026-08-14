@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { get, post, put, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, kv, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, kv, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 const when = (s) => (s || "").slice(0, 16).replace("T", " ");
 
@@ -66,7 +66,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "unsuppress") {
     const phone = args[0] || fatal("Usage: whissle compliance unsuppress <+1…>   (re-enable calling for a number)");
-    await del(EP.compliance.suppression(org, encodeURIComponent(phone)));
+    const r = await del(EP.compliance.suppression(org, encodeURIComponent(phone)));
+    if (flags.json) return printMutation(r, { unsuppressed: phone });
     ok(`Re-enabled calling for ${phone}`);
     return;
   }

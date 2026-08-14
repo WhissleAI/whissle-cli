@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { get, post, patch, del, upload } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, err, ok, table, kv, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, err, ok, table, kv, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
+import { exitCodeFor } from "../exit.mjs";
 
 // Fields that go in the create body vs. a follow-up PATCH (audio/config are
 // PATCH-only). Anything else in the file is passed through to create as-is.
@@ -168,14 +169,17 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle agents delete <agent-id> [--force]");
+    let r;
     try {
-      await del(EP.agents.del(id), { query: { confirm: flags.force ? "true" : undefined } });
+      r = await del(EP.agents.del(id), { query: { confirm: flags.force ? "true" : undefined } });
     } catch (e) {
+      // Rephrasing a caught failure must not cost its status — see ui.fatal.
       if (e.status === 409 && !flags.force) {
-        fatal(`${e.message}\n  Re-run with --force to delete the agent and its knowledge.`);
+        fatal(`${e.message}\n  Re-run with --force to delete the agent and its knowledge.`, exitCodeFor(e));
       }
       throw e;
     }
+    if (flags.json) return printMutation(r, { deleted: id });
     ok(`Deleted agent ${id}`);
     return;
   }

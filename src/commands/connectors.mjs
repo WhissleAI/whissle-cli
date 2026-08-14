@@ -7,7 +7,8 @@
 import { readFileSync } from "node:fs";
 import { get, post, patch, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
+import { exitCodeFor } from "../exit.mjs";
 
 // The LIST endpoint may return {credentials:[…]} or a bare array — accept both.
 const asList = (r) => (Array.isArray(r) ? r : r?.credentials || []);
@@ -91,19 +92,24 @@ export async function run(sub, args, flags) {
 
   if (sub === "remove") {
     const id = args[0] || fatal("Usage: whissle connectors remove <id> [--force]");
+    let r;
     try {
-      await del(EP.connectors.del(org, id), {
+      r = await del(EP.connectors.del(org, id), {
         query: { confirm: flags.force ? "true" : undefined },
       });
     } catch (e) {
+      // Better wording must not cost the status: `exitCodeFor` is what keeps a
+      // 404 exiting 3 and a 401 exiting 2 after we have caught the error to
+      // rephrase it.
       if (e.status === 404) {
-        fatal(`No connector ${id} in this workspace (already removed?).`);
+        fatal(`No connector ${id} in this workspace (already removed?).`, exitCodeFor(e));
       }
       if (e.status === 409 && !flags.force) {
-        fatal(`${e.message}\n  Re-run with --force to remove it.`);
+        fatal(`${e.message}\n  Re-run with --force to remove it.`, exitCodeFor(e));
       }
       throw e;
     }
+    if (flags.json) return printMutation(r, { removed: id });
     ok(`Removed connector ${id}`);
     return;
   }

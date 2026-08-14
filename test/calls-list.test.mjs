@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { absolutizeUrl, isSigned, normalizeCallList, numeric } from "../src/commands/calls.mjs";
+import { absolutizeUrl, batchExitCode, isSigned, normalizeCallList, numeric } from "../src/commands/calls.mjs";
 
 test("both list shapes are understood", () => {
   // `view=summary` answers {items,total}; the default view answers a bare array
@@ -53,4 +53,34 @@ test("a local-storage relative path is made fetchable", () => {
 test("no recording is null, not the string 'undefined'", () => {
   assert.equal(absolutizeUrl(undefined, "https://api.example"), null);
   assert.equal(absolutizeUrl(null, "https://api.example"), null);
+});
+
+// ── batch outcomes: a failed batch must not exit 0 ────────────────────────────
+
+test("a batch where nothing failed exits 0", () => {
+  assert.equal(batchExitCode([{ ok: true }, { ok: true }]), 0);
+  assert.equal(batchExitCode([]), 0);
+});
+
+test("a batch refused for credit exits 4, not 0", () => {
+  // The failure this exists for: 500 rows, every one 402, "✓ Campaign done —
+  // 0/500 placed", exit 0, and a cron job that never alerted.
+  assert.equal(
+    batchExitCode([{ ok: false, status: 402 }, { ok: false, status: 402 }]),
+    4,
+  );
+});
+
+test("one failure among successes still fails the batch", () => {
+  assert.equal(batchExitCode([{ ok: true }, { ok: false, status: 404 }]), 3);
+});
+
+test("failures that disagree report generic rather than picking one", () => {
+  // "some 402s and some 404s" is not one condition; claiming it is would be
+  // worse than saying "something went wrong".
+  assert.equal(batchExitCode([{ ok: false, status: 402 }, { ok: false, status: 404 }]), 1);
+});
+
+test("a failure with no HTTP status (a socket that never opened) is generic", () => {
+  assert.equal(batchExitCode([{ ok: false, status: null }]), 1);
 });

@@ -5,7 +5,7 @@
 // `confirm` before they start grounding agents. READ any member; WRITE owner/admin.
 import { get, post, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
@@ -40,7 +40,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle memory delete <id>");
-    await del(EP.memory.del(org, id));
+    const r = await del(EP.memory.del(org, id));
+    if (flags.json) return printMutation(r, { deleted: id });
     ok(`Deleted memory ${id}`);
     return;
   }
