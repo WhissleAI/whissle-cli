@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { get, post, patch, del } from "../api.mjs";
 import { resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
+import { exitCodeFor } from "../exit.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
@@ -41,12 +42,16 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const toolId = args[0] || fatal("Usage: whissle tools delete <tool-id>");
+    let r;
     try {
-      await del(EP.tools.del(org, toolId));
+      r = await del(EP.tools.del(org, toolId));
     } catch (e) {
-      if (e.status === 404) fatal(`No tool ${toolId} in this workspace (already deleted?).`);
+      // Kinder wording, SAME exit code — a 404 re-reported as prose still has to
+      // exit 3, or a script cannot tell "already gone" from "your key is wrong".
+      if (e.status === 404) fatal(`No tool ${toolId} in this workspace (already deleted?).`, exitCodeFor(e));
       throw e;
     }
+    if (flags.json) return printMutation(r, { deleted: toolId });
     ok(`Deleted tool ${toolId}`);
     return;
   }
@@ -54,7 +59,8 @@ export async function run(sub, args, flags) {
   if (sub === "attach") {
     const toolId = args[0] || fatal("Usage: whissle tools attach <tool-id> --agent <agent-id>");
     if (!flags.agent) fatal("--agent <agent-id> is required.");
-    await post(EP.tools.attach(org, toolId), { agent_id: flags.agent });
+    const r = await post(EP.tools.attach(org, toolId), { agent_id: flags.agent });
+    if (flags.json) return printMutation(r, { attached: toolId, agent_id: flags.agent });
     ok(`Attached tool ${toolId} to agent ${flags.agent}`);
     return;
   }

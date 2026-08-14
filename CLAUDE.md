@@ -9,9 +9,14 @@ Guidance for Claude Code when working in this repository.
 agents, **run** them (text chat), and **pull records** (calls, transcripts,
 recordings, usage) for their own evaluation and logs. Node.js ESM, no build step.
 
-It is the server-side companion to `@whissle/agents` (the browser voice-embed SDK
-in `SDKs/agents_js_sdk`): the SDK *runs* an agent in a web page with a publishable
-`wpk_` key; this CLI *manages* the workspace with a secret `wsk_` key.
+Four clients share this gateway, and they are routinely confused for each other:
+`@whissle/cli` (this repo — the terminal control plane, `wsk_`),
+`@whissle/agents` (browser voice embed, publishable `wpk_`, `SDKs/agents_js_sdk`),
+`@whissle/sdk` (server-side Node, `wsk_`, `SDKs/whissle-sdk`) and `whissle_sdk`
+(server-side Python, `wsk_`, `SDKs/whissle-python`). The three `wsk_` clients keep
+DELIBERATELY PARALLEL path maps — `src/endpoints.mjs` here, `src/endpoints.ts`
+there, `whissle_sdk/endpoints.py` there — because two divergent maps is how one of
+them silently rots. Change a route in all three or in none.
 
 > Note: this project used to be a terminal *coding assistant* (SSE REPL against
 > `api.whissle.ai`, local read/write/bash tools). That was fully removed and
@@ -23,7 +28,8 @@ in `SDKs/agents_js_sdk`): the SDK *runs* an agent in a web page with a publishab
 npm install
 node bin/whissle.mjs            # or `whissle` after `npm link`
 node bin/whissle.mjs help
-npm test                        # node --test "test/*.test.mjs" (pure-function units, no network)
+npm test                        # node --test "test/*.test.mjs" (pure-function units + source-level
+                                # contract checks; no network — the only subprocesses run --help offline)
 ```
 
 ## Architecture
@@ -47,6 +53,13 @@ src/commands/
                        Sends source:"cli" + a per-run session_id so each run is its own
                        SESSION in the studio's history (not one shared per-key thread),
                        and prints the studio link. turnBody/sessionsUrl are exported for tests.
+                       BOTH handles ride on EVERY turn. The server looks up conversation_id
+                       first and session_id is then never read; it is read only on the branch
+                       that OPENS a thread — which is where a stale/foreign --conversation
+                       lands, because the server declines an id it cannot resolve rather than
+                       failing the turn. Withholding the session key there dropped that turn
+                       into `key:<api-key-id>`, the per-key catch-all thread session_id exists
+                       to prevent. (routes/agents.py ChatTurnBody + session_history.thread_key.)
   calls.mjs            start / campaign / list / get / result / transcript / audio / export
                        start = one outbound call; campaign = one call per CSV row (each column ->
                        a dynamic {{variable}}, --to-col picks the callee, gated by --dry-run/--yes).
@@ -58,8 +71,14 @@ src/commands/
                        widget / n8n thread at all. `--agent companion` returns the CALLER'S OWN companion
                        sessions only. trace = per-turn observability: tool runs with args/duration/citations,
                        WHICH PROVIDER ANSWERED + a marker when it failed over (surfaced nowhere else in the
-                       product), token cost, latency, invented tools and action-integrity catches. Voice
-                       traces delegate to /api/calls/{id}/trace, kept as a fallback path for a raw call id.
+                       product), token COUNTS (input/output/cached — there is no currency figure anywhere
+                       in a trace), latency, invented tools and action-integrity catches. TEXT traces are
+                       DERIVED from the persisted thread, so signals.turns[] carry provider/model/
+                       failed_over/latency_ms/hops + counts, and voice-only families are listed under
+                       signals.unavailable with a reason each. VOICE traces delegate to
+                       /api/calls/{id}/trace and are RECORDED: signals.turns[] are acoustic (emotion,
+                       intent, age/gender, fillers, wpm) and provider/model appear only as llm_call
+                       entries in `events`, where the live recorder caught them. Do not assume one shape.
                        Pure shapers (summarize/groupByTurn/partitionEvents/*Lines) are exported + unit-tested.
   actions.mjs          list / approve / reject / scheduled / cancel-scheduled   (actions:read/write; /api/actions —
                        NOT org-prefixed. The human-approval queue for held post-call actions + scheduled follow-ups.)
@@ -114,6 +133,16 @@ existed cannot be granted it and is refused — mint a fresh key to manage conne
   `sub` = the subcommand (for `chat` it is the agent id); `args` = remaining
   positionals; `flags` = parsed `--k v` / `--bool` / `-m` (plus global `--json`).
 - **Output**: human tables by default; `--json` everywhere for scripting/`jq`.
+  A write whose route answers `204` still answers in JSON — `printMutation(payload,
+  ack)` in `ui.mjs` prints the server body when there is one and an explicit
+  `{deleted: id}`-shaped acknowledgement when there is not. A bare `ok()` after a
+  `del`/`post` is the bug `test/json-contract.test.mjs` exists to catch.
+- **`fatal(msg, code)`**: a command that catches an `ApiError` to reword it MUST
+  pass `exitCodeFor(e)`, or a 404 rephrased as "already removed?" exits 1 and a
+  script can no longer tell it from a bad key. Also caught by that suite.
+- **Batch commands** (`calls campaign`, `calls export`) set `process.exitCode` from
+  `batchExitCode()` — the code every failure agrees on, else 1. They used to exit 0
+  no matter how many rows failed.
 - **Errors**: `api.mjs` throws `ApiError` with a friendly message (401→login,
   402→top up, 403→scope); the entry point prints it and exits via
   `exitCodeFor()`.

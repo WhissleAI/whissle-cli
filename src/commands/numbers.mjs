@@ -4,10 +4,16 @@
 import { createInterface } from "node:readline/promises";
 import { get, post, put, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, bold, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, bold, printJson, printMutation, fatal } from "../ui.mjs";
 
 async function confirm(question) {
-  if (!process.stdin.isTTY) return true; // non-interactive (CI) → assume --yes upstream
+  // NOT auto-yes. There is no "--yes upstream" to assume: a piped or CI
+  // invocation reaching here has already failed the `flags.yes` check at the
+  // call site, so answering for the user would buy a number — on a recurring
+  // charge — because nobody was at a keyboard to say no.
+  if (!process.stdin.isTTY) {
+    fatal("Buying a number deducts credits and recurs monthly. There is no TTY to confirm on — re-run with --yes.");
+  }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const a = (await rl.question(question + " [y/N] ")).trim().toLowerCase();
   rl.close();
@@ -68,8 +74,10 @@ export async function run(sub, args, flags) {
   if (sub === "claim") {
     const id = args[0] || fatal("Usage: whissle numbers claim <number-id>   (ids from `whissle numbers available`)");
     const res = await post(EP.numbers.claim(org, id), {});
+    // JSON FIRST: this printed the green line to stdout unconditionally and then
+    // the payload, so `… --json | jq` choked on line 1 of its input.
+    if (flags.json) return printMutation(res, { claimed: id });
     ok(`Claimed number ${id}`);
-    if (flags.json) printJson(res);
     return;
   }
 
@@ -80,14 +88,16 @@ export async function run(sub, args, flags) {
     const nums = await get(EP.numbers.free(org));
     const match = (nums || []).find((n) => n.id === ref || n.phone_number === ref);
     if (!match) fatal(`${ref} is not a number in this workspace (see \`whissle numbers list\`).`);
-    await put(EP.numbers.inboundNumber(org, flags.agent), { number_id: match.id, source: match.source || "platform" });
+    const r = await put(EP.numbers.inboundNumber(org, flags.agent), { number_id: match.id, source: match.source || "platform" });
+    if (flags.json) return printMutation(r, { number_id: match.id, phone_number: match.phone_number, agent_id: flags.agent });
     ok(`Connected ${match.phone_number} → agent ${flags.agent} for inbound calls.`);
     return;
   }
 
   if (sub === "release") {
     const id = args[0] || fatal("Usage: whissle numbers release <number-id>");
-    await post(EP.numbers.release(org, id), {});
+    const r = await post(EP.numbers.release(org, id), {});
+    if (flags.json) return printMutation(r, { released: id });
     ok(`Released number ${id}`);
     return;
   }

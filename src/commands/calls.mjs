@@ -5,7 +5,8 @@ import { writeFileSync, readFileSync } from "node:fs";
 import { get, post } from "../api.mjs";
 import { loadConfig } from "../config.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, kv, trunc, dim, bold, brand, md, printJson, fatal, spinner } from "../ui.mjs";
+import { out, ok, warn, table, kv, trunc, dim, bold, brand, md, printJson, fatal, spinner } from "../ui.mjs";
+import { EXIT, exitCodeFor } from "../exit.mjs";
 
 // ── list shape + URL helpers (pure — exported for tests) ─────────────────────
 
@@ -41,6 +42,40 @@ export function absolutizeUrl(url, baseUrl) {
 /** Does this URL carry its own authorization (a pre-signed query)? */
 export function isSigned(url) {
   return /[?&](X-Amz-Signature|Signature|token|X-Goog-Signature)=/i.test(url || "");
+}
+
+// ── batch outcomes ───────────────────────────────────────────────────────────
+
+/**
+ * The exit code for a batch of per-row results. Pure — exported for tests.
+ *
+ * Nothing failed → 0. Otherwise the code every failure agrees on (500 rows all
+ * refused for credit → 4, so a script branches on the wallet without parsing
+ * prose), and 1 when they disagree, because "some 402s and some 404s" is not
+ * one condition and pretending it is would be worse than generic.
+ */
+export function batchExitCode(results) {
+  const codes = new Set(
+    results.filter((r) => !r.ok).map((r) => exitCodeFor({ status: r.status ?? null })),
+  );
+  if (!codes.size) return EXIT.OK;
+  return codes.size === 1 ? [...codes][0] : EXIT.GENERIC;
+}
+
+/**
+ * One call in full, or `null` — recording WHY into `failures`.
+ *
+ * Returning the summary row instead (the old `.catch(() => c)`) is the failure
+ * mode this exists to prevent: a summary has no transcript, so a refused fetch
+ * became a call on which nobody said anything.
+ */
+async function fetchFull(id, failures) {
+  try {
+    return await get(EP.calls.get(id));
+  } catch (e) {
+    failures.push({ id, status: e?.status ?? null, error: e?.message || String(e) });
+    return null;
+  }
 }
 
 // ── result polling ───────────────────────────────────────────────────────────
@@ -183,6 +218,12 @@ export async function run(sub, args, flags) {
     if (missing) return fatal(`${missing} row(s) have no number in column "${toCol}". Use --to-col <col>. Columns: ${cols.join(", ")}`);
 
     if (flags["dry-run"]) {
+      if (flags.json) {
+        return printJson({
+          dry_run: true, agent_id: agent, count: jobs.length,
+          calls: jobs.map((j) => ({ to_number: j.to, variables: j.variables })),
+        });
+      }
       table(["TO", "VARIABLES"], jobs.map((j) => [j.to, trunc(Object.entries(j.variables).map(([k, v]) => `${k}=${v}`).join(" · "), 60)]));
       ok(`Dry run — ${jobs.length} call(s) would be placed for agent ${agent}. Re-run with --yes to place them.`);
       return;
@@ -200,16 +241,27 @@ export async function run(sub, args, flags) {
         });
         const id = res.call_id || res.id || "";
         if (!flags.json) out(`  ${brand("✓")} ${job.to}  ${dim(id)}`);
-        return { to: job.to, ok: true, call_id: id };
+        // The server's own payload rides along verbatim under `result`, so a
+        // `--json` batch is not just a CLI-invented ok/error summary.
+        return { to: job.to, ok: true, call_id: id, result: res };
       } catch (e) {
         if (!flags.json) out(`  ${dim("✗")} ${job.to}  ${dim(e.message || String(e))}`);
-        return { to: job.to, ok: false, error: e.message || String(e) };
+        return { to: job.to, ok: false, error: e.message || String(e), status: e?.status ?? null, body: e?.body ?? null };
       }
     });
     const okN = results.filter((r) => r.ok).length;
-    if (flags.json) return printJson(results);
-    ok(`Campaign done — ${okN}/${jobs.length} placed${okN < jobs.length ? `, ${jobs.length - okN} failed` : ""}.`);
-    if (okN) out(dim("  Pull results later: ") + `whissle calls export --agent ${agent} --format csv --out results.csv`);
+    if (flags.json) printJson(results);
+    else {
+      ok(`Campaign done — ${okN}/${jobs.length} placed${okN < jobs.length ? `, ${jobs.length - okN} failed` : ""}.`);
+      if (okN) out(dim("  Pull results later: ") + `whissle calls export --agent ${agent} --format csv --out results.csv`);
+    }
+    // Exit non-zero when ANY row failed. This used to exit 0 unconditionally, so
+    // the one command most likely to meet a credit wall was the one that could
+    // not report it: 500 rows, every one 402, "✓ Campaign done — 0/500 placed",
+    // exit 0, and a cron job that never alerted. When every failure shares a
+    // status the batch reports THAT code (402 → 4), so a script can branch on
+    // "out of credit" without parsing the output.
+    process.exitCode = batchExitCode(results);
     return;
   }
 
@@ -329,7 +381,10 @@ export async function run(sub, args, flags) {
     // the configured base URL. It still needs your key, and we say so rather
     // than implying the signature is in the URL when it isn't.
     const url = absolutizeUrl(r?.url, loadConfig().baseUrl);
-    if (flags.json) return printJson({ ...r, url });
+    // The server's payload goes out verbatim; the fetchable form is an EXTRA
+    // field. Overwriting `url` in place meant `--json` reported something the
+    // API never said, under the API's own key name.
+    if (flags.json) return printJson({ ...r, resolved_url: url });
     if (!url) return out(dim("(no recording available)"));
     out(url);
     if (!isSigned(url)) out(dim("  (not pre-signed — fetch it with: Authorization: Bearer $WHISSLE_API_KEY)"));
@@ -355,12 +410,19 @@ export async function run(sub, args, flags) {
     if (flags.since) calls = calls.filter((c) => (c.created_at || "") >= flags.since);
     if (flags.status) calls = calls.filter((c) => c.status === flags.status);
 
+    // Every row that could not be fetched IN FULL is dropped and counted.
+    // `.catch(() => c)` used to substitute the summary row, so a key that lost
+    // `calls:read` mid-export, or an empty wallet, produced a file in which
+    // every call had `transcript: []` — indistinguishable from a workspace
+    // where nobody ever said anything — written to --out, exit 0, silence.
+    const failures = [];
     let output;
     if (fmt === "csv") {
       const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
       const rows = [["id", "agent", "status", "duration_sec", "created_at", "disposition", "turns"]];
       for (const c of calls) {
-        const full = await get(EP.calls.get(c.id)).catch(() => c);
+        const full = await fetchFull(c.id, failures);
+        if (!full) continue;
         rows.push([
           c.id, c.agent_name || c.agent_id, c.status, c.duration_sec, c.created_at,
           (full.metadata || {}).disposition || "", turnsOf(full).length,
@@ -370,7 +432,8 @@ export async function run(sub, args, flags) {
     } else {
       const lines = [];
       for (const c of calls) {
-        const full = await get(EP.calls.get(c.id)).catch(() => c);
+        const full = await fetchFull(c.id, failures);
+        if (!full) continue;
         lines.push(JSON.stringify({
           id: c.id, agent: c.agent_name || c.agent_id, status: c.status,
           duration_sec: c.duration_sec, created_at: c.created_at,
@@ -380,11 +443,19 @@ export async function run(sub, args, flags) {
       output = lines.join("\n") + "\n";
     }
 
+    const exported = calls.length - failures.length;
     if (flags.out) {
       writeFileSync(flags.out, output);
-      ok(`Exported ${calls.length} call(s) → ${flags.out}`);
+      ok(`Exported ${exported} call(s) → ${flags.out}`);
     } else {
       process.stdout.write(output);
+    }
+    if (failures.length) {
+      warn(
+        `${failures.length} of ${calls.length} call(s) could not be fetched in full and were LEFT OUT ` +
+          `(first: ${failures[0].id} — ${failures[0].error}). This export is incomplete.`,
+      );
+      process.exitCode = batchExitCode(failures.map((f) => ({ ok: false, status: f.status })));
     }
     return;
   }

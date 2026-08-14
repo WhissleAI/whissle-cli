@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { get, post, patch, del, upload } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, kv, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, kv, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 // Real customer columns the backend maps to typed fields; anything else in a CSV
 // becomes a custom attribute. Kept in sync with routes/customers.py _CUSTOMER_COLUMNS.
@@ -128,7 +128,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle customers delete <id>");
-    await del(EP.customers.del(id));
+    const r = await del(EP.customers.del(id));
+    if (flags.json) return printMutation(r, { deleted: id });
     ok(`Deleted contact ${id} (and its calls + recordings)`);
     return;
   }

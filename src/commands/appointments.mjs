@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { get, post, put, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, kv, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, kv, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
@@ -66,7 +66,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "unblock") {
     const id = args[0] || fatal("Usage: whissle appointments unblock <blocked-id> [--agent <id>]");
-    await del(EP.appointments.blockedDate(org, id), { query: q });
+    const r = await del(EP.appointments.blockedDate(org, id), { query: q });
+    if (flags.json) return printMutation(r, { unblocked: id });
     ok(`Unblocked ${id}`);
     return;
   }

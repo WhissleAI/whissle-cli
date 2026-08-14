@@ -10,7 +10,7 @@
 import { get, patch, post } from "../api.mjs";
 import { loadConfig } from "../config.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, kv, dim, bold, printJson, fatal } from "../ui.mjs";
+import { out, ok, kv, dim, bold, printJson, printMutation, fatal } from "../ui.mjs";
 
 /**
  * The mint body. The credential goes in the BODY as `api_key` (not only the
@@ -94,7 +94,8 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "disable") {
-    await patch(EP.agents.embed(id), { embed_enabled: false });
+    const cfg = await patch(EP.agents.embed(id), { embed_enabled: false });
+    if (flags.json) return printMutation(cfg, { agent_id: id, embed_enabled: false });
     ok(`Embedding disabled for agent ${id}.`);
     return;
   }

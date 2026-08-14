@@ -5,7 +5,7 @@
 // voice embed. The full secret is shown exactly ONCE at creation — copy it then.
 import { get, post, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, kv, table, trunc, dim, brand, bold, printJson, fatal } from "../ui.mjs";
+import { out, ok, kv, table, trunc, dim, brand, bold, printJson, printMutation, fatal } from "../ui.mjs";
 
 const asList = (r) => (Array.isArray(r) ? r : r?.keys || []);
 
@@ -60,7 +60,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "delete") {
     const id = args[0] || fatal("Usage: whissle keys delete <id>");
-    await del(EP.keys.del(org, id));
+    const r = await del(EP.keys.del(org, id));
+    if (flags.json) return printMutation(r, { revoked: id });
     ok(`Revoked key ${id}`);
     return;
   }

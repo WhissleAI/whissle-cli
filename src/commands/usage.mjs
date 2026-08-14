@@ -1,7 +1,7 @@
 // whissle usage   — workspace wallet balance + recent ledger.
 import { get, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, table, kv, trunc, dim, printJson } from "../ui.mjs";
+import { out, table, kv, trunc, dim, warn, printJson } from "../ui.mjs";
 
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
@@ -9,11 +9,18 @@ export async function run(sub, args, flags) {
   // The ledger is its own endpoint (GET /wallet/ledger) — the wallet body carries
   // only the balance. Fetch it separately; a failure never blocks the balance.
   let ledger = [];
+  let ledgerError = null;
   try {
     ledger = (await get(EP.wallet.ledger(org))) || [];
-  } catch { /* ledger unavailable — still show the balance */ }
+  } catch (e) {
+    // Still show the balance — but SAY the ledger is missing. Swallowing this
+    // made "your key lacks billing:read" and "you have never spent anything"
+    // the same output: `ledger: []`, exit 0.
+    ledgerError = { error: e?.message || String(e), status: e?.status ?? null };
+  }
 
-  if (flags.json) return printJson({ ...wallet, ledger });
+  if (flags.json) return printJson({ ...wallet, ledger, ...(ledgerError ? { ledger_error: ledgerError } : {}) });
+  if (ledgerError) warn(`Could not read the ledger (${ledgerError.error}) — the balance below is still current.`);
 
   const bal = wallet.balance_usd ?? wallet.balance ?? wallet.credits ?? null;
   kv({ balance: bal != null ? `$${bal}` : dim("—"), currency: wallet.currency || "USD" }, ["balance", "currency"]);

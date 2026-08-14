@@ -4,7 +4,7 @@
 // is emailed, not returned here — this manages the pending list. Owner/admin only.
 import { get, post, del, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
 const asList = (r) => (Array.isArray(r) ? r : r?.invitations || []);
 const ROLES = ["owner", "admin", "member"];
@@ -48,7 +48,8 @@ export async function run(sub, args, flags) {
 
   if (sub === "revoke") {
     const id = args[0] || fatal("Usage: whissle team revoke <invitation-id>");
-    await del(EP.team.del(org, id));
+    const r = await del(EP.team.del(org, id));
+    if (flags.json) return printMutation(r, { revoked: id });
     ok(`Revoked invitation ${id}`);
     return;
   }

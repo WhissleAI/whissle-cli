@@ -67,6 +67,7 @@ const HELP = `${brand("whissle")} — the Voice Agents platform CLI
 
 ${bold("Setup")}
   whissle login                       connect a workspace (secret key wsk_…)
+  whissle logout                      forget the stored key
   whissle whoami                      show the connected workspace
   whissle config [set --key … --base-url …]
 
@@ -127,8 +128,10 @@ ${bold("Sessions")}  ${dim("(needs calls:read)")}  ${dim("— voice calls AND te
                        [--limit N] [--offset N]     ${dim("`calls` only sees the calls table")}
   whissle sessions get <session-id>       transcript + tool runs + summary, either kind
   whissle sessions trace <session-id> [--all] [--turns N]
-                       ${dim("turn-by-turn: tools + args + duration, KB citations, token cost,")}
-                       ${dim("and WHICH PROVIDER ANSWERED — flagged when it failed over")}
+                       ${dim("turn-by-turn: tools + args + duration, KB citations, token")}
+                       ${dim("COUNTS (not a cost) and latency, and WHICH PROVIDER ANSWERED —")}
+                       ${dim("flagged when it failed over. Text: derived per turn. Voice:")}
+                       ${dim("acoustic signals + whatever the live recorder captured.")}
 
 ${bold("Knowledge & tools")}
   whissle kb list <agent-id>
