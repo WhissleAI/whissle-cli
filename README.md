@@ -182,13 +182,15 @@ whissle companion -m "…" --json --events | jq -c 'select(.event=="tool")'
 
 #### Everyday tools
 
-Nine small tools ship on the companion agent type, alongside the workspace ones.
-They are declared on the type, so they are also what an **anonymous visitor**
-gets when the agent embedded in your page is of type `companion` — no sign-in,
-no workspace data. Ask the gateway rather than trusting this list:
+Nine small tools ship on the `companion` agent type, alongside the workspace
+ones — and it is the only type that carries them. Because they are declared on
+the type, they are also what an **anonymous visitor** gets when the agent
+embedded in your page is of that type: no sign-in, no workspace data. Your own
+`whissle companion` has them too. Ask the gateway rather than trusting this list
+(note the field is `default_tools`):
 
 ```bash
-whissle agents types --json | jq -r '.[] | select(.key=="companion") | .tools[]'
+whissle agents types --json | jq -r '.[] | select(.key=="companion") | .default_tools[]'
 ```
 
 Three of them behave in ways worth knowing before you rely on them:
