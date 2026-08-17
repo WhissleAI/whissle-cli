@@ -19,6 +19,7 @@ Each example is fuller than the last — copy the one closest to your use case.
 | **Medium** | `agents/dental-receptionist.json`, `agents/lead-qualification.json` | Adds variables, a real tool set, and (lead) the outbound **automation maps** — post-call tools, follow-up scheduling, and approval policy. |
 | **+ Knowledge** | `agents/dental-clinic/` | Everything above **plus** a `knowledge/` folder ingested into the KB for RAG-grounded answers. This is the flagship — it sets *every* supported field. |
 | **+ Connector** | `agents/patient-checkin-fhir/` | Adds the FHIR/EHR tool set — a live connector. Configure an EHR credential in the workspace first — `whissle connectors add --kind fhir --name "…" --base-url … --auth …` (see the file's `_setup_note`) — and the agent's `fhir_*` tools resolve it automatically. |
+| **+ Grounded support** | `agents/appliance-care/` | Knowledge the agent must answer *from*: six synthetic washing-machine manuals whose procedures genuinely conflict between models, plus safety rules that stop troubleshooting. Shows a deliberately **minimal** tool set, a prompt scoped to exactly what those tools can do, and no explicitly configured post-call automation. |
 
 Every agent created this way is **both web-embeddable and reachable by phone** —
 run `whissle embed enable <id>` for the widget, or `whissle numbers connect` to
