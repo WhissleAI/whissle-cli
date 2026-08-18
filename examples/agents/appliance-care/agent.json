@@ -1,5 +1,5 @@
 {
-  "_note": "ApplianceCare — a home-appliance support agent for washing machines. All manuals in knowledge/ are SYNTHETIC, with invented brands (Northwind, Larkfield, Vantis). No real or copyrighted manual content. The tool set is deliberately minimal (search_knowledge_base + take_message): this agent CANNOT book or dispatch a service visit, and the prompt must not claim otherwise. No post-call automation fields are set here — per examples/README.md, omitted maps inherit the agent-type blueprint's defaults, so verify what the customer_support blueprint does before creating this agent live.",
+  "_note": "ApplianceCare — a home-appliance support agent for washing machines. All manuals in knowledge/ are SYNTHETIC, with invented brands (Northwind, Larkfield, Vantis). No real or copyrighted manual content. The tool set is deliberately minimal (search_knowledge_base + take_message): this agent CANNOT book or dispatch a service visit, and the prompt must not claim otherwise. Post-call automation is explicitly disabled below, and sensitive actions require human approval.",
 
   "name": "ApplianceCare Support",
   "agent_type": "customer_support",
@@ -24,6 +24,34 @@
     "search_knowledge_base",
     "take_message"
   ],
+
+  "_automation_note": "These three maps are set EXPLICITLY, not omitted. GET /api/agent-types shows the customer_support blueprint defaults to disposition_tool_map {resolved: [send_sms]} and further_action_map with route_to_team on escalated/unresolved plus follow-up CALLS on follow_up_needed (24h x3) and no_response (2h x3). Omitting these fields inherits all of that. Every disposition in the blueprint taxonomy is listed below so nothing falls through to a default: no tool runs after a session, no follow-up is scheduled, and anything sensitive requires human approval in the Action Inbox.",
+
+  "disposition_tool_map": {
+    "resolved": [],
+    "escalated": [],
+    "follow_up_needed": [],
+    "unresolved": [],
+    "wrong_number": [],
+    "no_response": []
+  },
+
+  "further_action_map": {
+    "resolved": { "kind": "none" },
+    "escalated": { "kind": "none" },
+    "follow_up_needed": { "kind": "none" },
+    "unresolved": { "kind": "none" },
+    "wrong_number": { "kind": "none" },
+    "no_response": { "kind": "none" }
+  },
+
+  "action_policy": {
+    "send_sms": "approve",
+    "send_email": "approve",
+    "schedule_callback": "approve",
+    "transfer_call": "approve",
+    "take_message": "approve"
+  },
 
   "knowledge": [
     { "title": "ApplianceCare Support Policy", "file": "knowledge/appliancecare-support-policy.md" },

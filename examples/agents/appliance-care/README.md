@@ -45,14 +45,15 @@ records a message or a safety escalation for the service team instead. If you ad
 those capabilities, update the prompt in the same commit, or the agent will start
 promising things it cannot do.
 
-**No post-call automation is configured here** — `disposition_tool_map`,
-`further_action_map`, and `action_policy` are all absent. That is not the same as
-nothing happening: per [the field reference](../../README.md#post-call-automation-outbound--workflows),
-omitted maps **inherit the agent-type blueprint's defaults**, so the
-`customer_support` blueprint decides what runs after a session. **Verify what those
-defaults do before creating this agent live** — `whissle agents get <id>` after
-creation shows the effective configuration. Set the maps explicitly if you need to
-guarantee a particular behaviour.
+**Automatic post-call actions are explicitly disabled here.** Every supported
+disposition maps to no automatic tool and no follow-up action, so the
+`customer_support` blueprint cannot silently add an SMS, callback, transfer, or
+follow-up call. Sensitive actions remain listed in `action_policy` as `approve`,
+which means a human must approve them in the Action Inbox.
+
+After creation, use `whissle agents get <id>` to verify that the effective
+`disposition_tool_map`, `further_action_map`, and `action_policy` still match the
+package.
 
 ## Try it
 
