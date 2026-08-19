@@ -9,12 +9,36 @@
     "max_transitions_per_call": 40
   },
   "variables": [
-    { "key": "appliance_id", "type": "string", "initial": "" },
-    { "key": "model_id", "type": "string", "initial": "" },
-    { "key": "manual_id", "type": "string", "initial": "" },
-    { "key": "case_id", "type": "string", "initial": "" },
-    { "key": "stop_use", "type": "boolean", "initial": false },
-    { "key": "resolved", "type": "boolean", "initial": false }
+    {
+      "key": "appliance_id",
+      "type": "string",
+      "initial": ""
+    },
+    {
+      "key": "model_id",
+      "type": "string",
+      "initial": ""
+    },
+    {
+      "key": "manual_id",
+      "type": "string",
+      "initial": ""
+    },
+    {
+      "key": "case_id",
+      "type": "string",
+      "initial": ""
+    },
+    {
+      "key": "stop_use",
+      "type": "boolean",
+      "initial": false
+    },
+    {
+      "key": "resolved",
+      "type": "boolean",
+      "initial": false
+    }
   ],
   "states": [
     {
@@ -29,7 +53,7 @@
       "label": "Understand the issue",
       "type": "converse",
       "allowed_tools": [],
-      "goal": "Understand what is wrong with the appliance. Listen for STOP-USE signals: a burning or chemical smell, smoke, sparks, a strange sound, or a hot surface. If ANY of those are present this is a safety condition and you must not troubleshoot. Otherwise establish the symptom, and any error code shown on the display."
+      "goal": "Understand what is wrong with the appliance. Listen for STOP-USE signals: a burning or chemical smell, smoke, sparks, a strange sound, or a hot surface. If ANY of those are present this is a safety condition and you must not troubleshoot. Otherwise establish the symptom, and any error code shown on the display. An error code, model number or serial number the customer reads out is REPORTED INPUT, not proof of identity. Note it, but never treat it as establishing which appliance you are dealing with."
     },
     {
       "id": "safety_stop_use",
@@ -42,77 +66,114 @@
       "id": "identify_customer",
       "label": "Identify the customer",
       "type": "converse",
-      "allowed_tools": ["get_customer_by_phone", "get_customer_by_name"],
-      "goal": "Identify the customer with get_customer_by_phone, or get_customer_by_name if they have no phone on file. This returns a customer id. A customer id is NOT an appliance id — do not use it as one."
+      "allowed_tools": [
+        "get_customer_by_phone",
+        "get_customer_by_name"
+      ],
+      "goal": "Identify the customer with get_customer_by_phone, or get_customer_by_name if they have no phone on file. This returns a customer id. A customer id is NOT an appliance id \u2014 do not use it as one."
     },
     {
       "id": "resolve_appliance",
       "label": "Resolve the internal appliance record",
       "type": "converse",
-      "allowed_tools": ["list_owned_appliances", "identify_model", "get_appliance_details"],
-      "goal": "Resolve the customer's appliance to its INTERNAL APPLIANCE RECORD ID. Call list_owned_appliances with the customer id; each entry carries the internal appliance_id together with its model number and serial number. Choose the entry that matches what the customer described and use ITS appliance_id from then on. If the customer only gives a brand, a partial model, or a serial number, call identify_model to resolve it first, then match that against the list. NEVER pass a model number, a model name, a serial number, or a customer id into a tool whose argument is appliance_id — those are different identifiers and the tool will fail or act on the wrong appliance. Confirm with get_appliance_details before continuing."
+      "allowed_tools": [
+        "list_owned_appliances",
+        "identify_model",
+        "get_appliance_details"
+      ],
+      "goal": "Resolve the customer's appliance to its INTERNAL APPLIANCE RECORD ID. Call list_owned_appliances with the customer id; each entry carries the internal appliance_id together with its model number and serial number. Choose the entry that matches what the customer described and use ITS appliance_id from then on. If the customer only gives a brand, a partial model, or a serial number, call identify_model to resolve it first, then match that against the list. NEVER pass a model number, a model name, a serial number, or a customer id into a tool whose argument is appliance_id \u2014 those are different identifiers and the tool will fail or act on the wrong appliance. Confirm with get_appliance_details before continuing. A code the customer quoted may CORROBORATE the record you resolved, or contradict it \u2014 if it contradicts, ask rather than assume. It can never substitute for list_owned_appliances. Customers misread digits, read the label of a different machine, and quote codes found online."
     },
     {
       "id": "disambiguate_model",
       "label": "Disambiguate the model",
       "type": "converse",
-      "allowed_tools": ["identify_model", "list_owned_appliances", "get_model_details"],
-      "goal": "More than one model matches what the customer said, and the candidates do not share one manual. Ask a distinguishing question — the full model number from the label, the appliance type, or the capacity — and use identify_model and get_model_details to settle it. Do not guess and do not quote a procedure until the model is settled. If the candidates all map to the SAME manual, no further disambiguation is needed; continue."
+      "allowed_tools": [
+        "identify_model",
+        "list_owned_appliances",
+        "get_model_details"
+      ],
+      "goal": "More than one model matches what the customer said, and the candidates do not share one manual. Ask a distinguishing question \u2014 the full model number from the label, the appliance type, or the capacity \u2014 and use identify_model and get_model_details to settle it. Do not guess and do not quote a procedure until the model is settled. If the candidates all map to the SAME manual, no further disambiguation is needed; continue. You may use a quoted error code as a HINT about which manual documents it, but confirm the model against the customer's own appliance record before relying on it. Never conclude the model from a code alone."
     },
     {
       "id": "select_manual",
       "label": "Select the correct manual",
       "type": "converse",
-      "allowed_tools": ["search_manuals", "get_model_details", "lookup_error_code"],
-      "goal": "Find the manual that belongs to the RESOLVED model. Call search_manuals with the model id so the result is scoped to that model, never a different model's manual. If the customer reported an error code, call lookup_error_code with the resolved model id and that code."
+      "allowed_tools": [
+        "search_manuals",
+        "get_model_details",
+        "lookup_error_code"
+      ],
+      "goal": "Find the manual that belongs to the RESOLVED model. Call search_manuals with the model id so the result is scoped to that model, never a different model's manual. If the customer reported an error code, call lookup_error_code with the resolved model id and that code. Only select a manual once the appliance record is resolved. If the code the customer quoted is not documented for the resolved model, say so and re-check the model with them - do not switch to whichever model's manual happens to contain that code."
     },
     {
       "id": "troubleshoot",
       "label": "Troubleshoot from the manual",
       "type": "converse",
-      "allowed_tools": ["open_manual_section", "search_manuals", "lookup_error_code", "get_appliance_details", "check_warranty", "get_service_history"],
+      "allowed_tools": [
+        "open_manual_section",
+        "search_manuals",
+        "lookup_error_code",
+        "get_appliance_details",
+        "check_warranty",
+        "get_service_history"
+      ],
       "goal": "Read the relevant section with open_manual_section and guide the customer through the steps that section actually documents. Quote only what the manual says. Do not invent a step, a part name, a specification, or a warranty term. If the manual does not document the procedure the customer is asking for, go to unsupported_procedure instead of improvising."
     },
     {
       "id": "unsupported_procedure",
       "label": "Procedure not in the manual",
       "type": "converse",
-      "allowed_tools": ["search_manuals", "open_manual_section"],
+      "allowed_tools": [
+        "search_manuals",
+        "open_manual_section"
+      ],
       "goal": "The customer asked for something this appliance's manual does not document, or that the support policy does not permit over the phone. Say plainly that the manual does not cover it and that you will not guess. Offer the supported alternative: a service visit, or escalation. Never improvise a repair procedure."
     },
     {
       "id": "open_case",
       "label": "Open a support case",
       "type": "tool",
-      "allowed_tools": ["create_support_case", "escalate_safety_issue"],
-      "goal": "Record the case against the resolved internal appliance_id. For a stop-use safety condition call escalate_safety_issue with that appliance_id and a reason describing the hazard. Otherwise call create_support_case with the appliance_id, a category, and a summary. Both take appliance_id — never a model or serial number."
+      "allowed_tools": [
+        "create_support_case",
+        "escalate_safety_issue"
+      ],
+      "goal": "Record the case against the resolved internal appliance_id. For a stop-use safety condition call escalate_safety_issue with that appliance_id and a reason describing the hazard. Otherwise call create_support_case with the appliance_id, a category, and a summary. Both take appliance_id \u2014 never a model or serial number."
     },
     {
       "id": "schedule_visit",
       "label": "Schedule a service visit",
       "type": "converse",
-      "allowed_tools": ["schedule_service", "check_warranty"],
-      "goal": "Offer a service visit only after a case exists. Call schedule_service with the case_id returned by the case tool — not the appliance id — plus the date, window, and the correct visit type for the problem. Ask the customer to confirm the slot before booking."
+      "allowed_tools": [
+        "schedule_service",
+        "check_warranty"
+      ],
+      "goal": "Offer a service visit only after a case exists. Call schedule_service with the case_id returned by the case tool \u2014 not the appliance id \u2014 plus the date, window, and the correct visit type for the problem. Ask the customer to confirm the slot before booking."
     },
     {
       "id": "unidentified_transfer",
       "label": "Transfer an unidentified caller",
       "type": "converse",
-      "allowed_tools": ["transfer_to_human_agents"],
+      "allowed_tools": [
+        "transfer_to_human_agents"
+      ],
       "goal": "The caller could not be identified, so there is no internal appliance record and nothing can be recorded against one. Do not open a case, do not record a resolution, and do not guess at an appliance. Explain what you could not verify and offer a transfer to a human with transfer_to_human_agents."
     },
     {
       "id": "escalate",
       "label": "Escalate to a human",
       "type": "converse",
-      "allowed_tools": ["transfer_to_human_agents"],
+      "allowed_tools": [
+        "transfer_to_human_agents"
+      ],
       "goal": "Escalate when the issue is beyond phone support, when the customer asks for a person, or when a safety case needs a technician. Call transfer_to_human_agents with a reason that names the appliance and the problem. Do NOT open a case here: a case requires the internal appliance_id, and this state is reachable before the appliance has been resolved (for example when the customer cannot be identified at all). Cases are opened in open_case, which only runs after resolve_appliance."
     },
     {
       "id": "record_outcome",
       "label": "Record the resolution",
       "type": "tool",
-      "allowed_tools": ["record_resolution"],
+      "allowed_tools": [
+        "record_resolution"
+      ],
       "goal": "Close the interaction in the record. Call record_resolution with the resolved appliance_id, the outcome that actually happened, the steps you actually walked through, and the manual_id you used. Do not record an outcome the customer did not confirm."
     },
     {
@@ -124,66 +185,197 @@
     }
   ],
   "transitions": [
-    { "id": "greet_to_issue", "from": "greet", "to": "identify_issue", "kind": "llm_condition", "priority": 10,
-      "condition": "The customer has described why they are calling." },
-
-    { "id": "issue_to_safety", "from": "identify_issue", "to": "safety_stop_use", "kind": "llm_condition", "priority": 5,
-      "condition": "The customer reports a burning or chemical smell, smoke, sparks, a hot surface, or another condition the manual says requires stopping use immediately." },
-    { "id": "issue_to_customer", "from": "identify_issue", "to": "identify_customer", "kind": "llm_condition", "priority": 20,
-      "condition": "The symptom is understood and it is not a stop-use safety condition." },
-
-    { "id": "safety_to_customer", "from": "safety_stop_use", "to": "identify_customer", "kind": "llm_condition", "priority": 10,
-      "condition": "The customer has been told to stop using and unplug the appliance." },
-
-    { "id": "customer_to_appliance", "from": "identify_customer", "to": "resolve_appliance", "kind": "llm_condition", "priority": 10,
-      "condition": "A customer record was found." },
-    { "id": "customer_to_unidentified", "from": "identify_customer", "to": "unidentified_transfer", "kind": "llm_condition", "priority": 20,
-      "condition": "The customer cannot be found and cannot be identified another way." },
-
-    { "id": "unidentified_to_close", "from": "unidentified_transfer", "to": "close", "kind": "llm_condition", "priority": 10,
-      "condition": "The caller has been transferred, or has declined a transfer." },
-
-    { "id": "appliance_to_disambiguate", "from": "resolve_appliance", "to": "disambiguate_model", "kind": "llm_condition", "priority": 10,
-      "condition": "More than one model or appliance plausibly matches, and the candidates do not share a single manual." },
-    { "id": "appliance_to_case_safety", "from": "resolve_appliance", "to": "open_case", "kind": "llm_condition", "priority": 15,
-      "condition": "The internal appliance_id is resolved and this is a stop-use safety condition, so a safety case must be opened before anything else." },
-    { "id": "appliance_to_manual", "from": "resolve_appliance", "to": "select_manual", "kind": "llm_condition", "priority": 20,
-      "condition": "Exactly one appliance is resolved and its internal appliance_id is known, and this is not a safety condition." },
-
-    { "id": "disambiguate_to_manual", "from": "disambiguate_model", "to": "select_manual", "kind": "llm_condition", "priority": 10,
-      "condition": "The model is now settled to a single model, or all remaining candidates share the same manual." },
-
-    { "id": "manual_to_troubleshoot", "from": "select_manual", "to": "troubleshoot", "kind": "llm_condition", "priority": 10,
-      "condition": "The manual for the resolved model has been found." },
-    { "id": "manual_to_unsupported", "from": "select_manual", "to": "unsupported_procedure", "kind": "llm_condition", "priority": 20,
-      "condition": "No manual section covers what the customer is asking for." },
-
-    { "id": "troubleshoot_to_unsupported", "from": "troubleshoot", "to": "unsupported_procedure", "kind": "llm_condition", "priority": 10,
-      "condition": "The manual does not document the procedure the customer wants." },
-    { "id": "troubleshoot_to_case", "from": "troubleshoot", "to": "open_case", "kind": "llm_condition", "priority": 20,
-      "condition": "The documented steps did not fix the problem and a case is needed." },
-    { "id": "troubleshoot_to_record", "from": "troubleshoot", "to": "record_outcome", "kind": "llm_condition", "priority": 30,
-      "condition": "The customer confirms the documented steps resolved the problem." },
-
-    { "id": "unsupported_to_case", "from": "unsupported_procedure", "to": "open_case", "kind": "llm_condition", "priority": 10,
-      "condition": "The customer wants the unsupported issue handled, so a case is needed." },
-    { "id": "unsupported_to_record", "from": "unsupported_procedure", "to": "record_outcome", "kind": "llm_condition", "priority": 20,
-      "condition": "The customer accepts that it is not supported and wants nothing further." },
-
-    { "id": "case_to_escalate_safety", "from": "open_case", "to": "escalate", "kind": "llm_condition", "priority": 10,
-      "condition": "A safety case was opened, so it must go to a human." },
-    { "id": "case_to_visit", "from": "open_case", "to": "schedule_visit", "kind": "llm_condition", "priority": 20,
-      "condition": "A non-safety case was opened and the customer wants a service visit." },
-    { "id": "case_to_record", "from": "open_case", "to": "record_outcome", "kind": "llm_condition", "priority": 30,
-      "condition": "A case was opened and no visit is being scheduled now." },
-
-    { "id": "visit_to_record", "from": "schedule_visit", "to": "record_outcome", "kind": "llm_condition", "priority": 10,
-      "condition": "The visit is booked, or the customer declined to book one." },
-
-    { "id": "escalate_to_record", "from": "escalate", "to": "record_outcome", "kind": "llm_condition", "priority": 10,
-      "condition": "The escalation or transfer has been made and its outcome should be recorded." },
-
-    { "id": "record_to_close", "from": "record_outcome", "to": "close", "kind": "llm_condition", "priority": 10,
-      "condition": "The resolution has been recorded." }
+    {
+      "id": "greet_to_issue",
+      "from": "greet",
+      "to": "identify_issue",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The customer has described why they are calling."
+    },
+    {
+      "id": "issue_to_safety",
+      "from": "identify_issue",
+      "to": "safety_stop_use",
+      "kind": "llm_condition",
+      "priority": 5,
+      "condition": "The customer reports a burning or chemical smell, smoke, sparks, a hot surface, or another condition the manual says requires stopping use immediately."
+    },
+    {
+      "id": "issue_to_customer",
+      "from": "identify_issue",
+      "to": "identify_customer",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "The symptom is understood and it is not a stop-use safety condition."
+    },
+    {
+      "id": "safety_to_customer",
+      "from": "safety_stop_use",
+      "to": "identify_customer",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The customer has been told to stop using and unplug the appliance."
+    },
+    {
+      "id": "customer_to_appliance",
+      "from": "identify_customer",
+      "to": "resolve_appliance",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "A customer record was found."
+    },
+    {
+      "id": "customer_to_unidentified",
+      "from": "identify_customer",
+      "to": "unidentified_transfer",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "The customer cannot be found and cannot be identified another way."
+    },
+    {
+      "id": "unidentified_to_close",
+      "from": "unidentified_transfer",
+      "to": "close",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The caller has been transferred, or has declined a transfer."
+    },
+    {
+      "id": "appliance_to_disambiguate",
+      "from": "resolve_appliance",
+      "to": "disambiguate_model",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "More than one model or appliance plausibly matches, and the candidates do not share a single manual."
+    },
+    {
+      "id": "appliance_to_case_safety",
+      "from": "resolve_appliance",
+      "to": "open_case",
+      "kind": "llm_condition",
+      "priority": 15,
+      "condition": "The internal appliance_id is resolved and this is a stop-use safety condition, so a safety case must be opened before anything else."
+    },
+    {
+      "id": "appliance_to_manual",
+      "from": "resolve_appliance",
+      "to": "select_manual",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "Exactly one appliance is resolved via list_owned_appliances and its internal appliance_id is known, and this is not a safety condition. A quoted error code alone does NOT satisfy this."
+    },
+    {
+      "id": "disambiguate_to_manual",
+      "from": "disambiguate_model",
+      "to": "select_manual",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The model is settled against the customer's own appliance record (not inferred from a quoted code alone), or all remaining candidates share the same manual."
+    },
+    {
+      "id": "manual_to_troubleshoot",
+      "from": "select_manual",
+      "to": "troubleshoot",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The manual for the resolved model has been found."
+    },
+    {
+      "id": "manual_to_unsupported",
+      "from": "select_manual",
+      "to": "unsupported_procedure",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "No manual section covers what the customer is asking for."
+    },
+    {
+      "id": "troubleshoot_to_unsupported",
+      "from": "troubleshoot",
+      "to": "unsupported_procedure",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The manual does not document the procedure the customer wants."
+    },
+    {
+      "id": "troubleshoot_to_case",
+      "from": "troubleshoot",
+      "to": "open_case",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "The documented steps did not fix the problem and a case is needed."
+    },
+    {
+      "id": "troubleshoot_to_record",
+      "from": "troubleshoot",
+      "to": "record_outcome",
+      "kind": "llm_condition",
+      "priority": 30,
+      "condition": "The customer confirms the documented steps resolved the problem."
+    },
+    {
+      "id": "unsupported_to_case",
+      "from": "unsupported_procedure",
+      "to": "open_case",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The customer wants the unsupported issue handled, so a case is needed."
+    },
+    {
+      "id": "unsupported_to_record",
+      "from": "unsupported_procedure",
+      "to": "record_outcome",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "The customer accepts that it is not supported and wants nothing further."
+    },
+    {
+      "id": "case_to_escalate_safety",
+      "from": "open_case",
+      "to": "escalate",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "A safety case was opened, so it must go to a human."
+    },
+    {
+      "id": "case_to_visit",
+      "from": "open_case",
+      "to": "schedule_visit",
+      "kind": "llm_condition",
+      "priority": 20,
+      "condition": "A non-safety case was opened and the customer wants a service visit."
+    },
+    {
+      "id": "case_to_record",
+      "from": "open_case",
+      "to": "record_outcome",
+      "kind": "llm_condition",
+      "priority": 30,
+      "condition": "A case was opened and no visit is being scheduled now."
+    },
+    {
+      "id": "visit_to_record",
+      "from": "schedule_visit",
+      "to": "record_outcome",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The visit is booked, or the customer declined to book one."
+    },
+    {
+      "id": "escalate_to_record",
+      "from": "escalate",
+      "to": "record_outcome",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The escalation or transfer has been made and its outcome should be recorded."
+    },
+    {
+      "id": "record_to_close",
+      "from": "record_outcome",
+      "to": "close",
+      "kind": "llm_condition",
+      "priority": 10,
+      "condition": "The resolution has been recorded."
+    }
   ]
 }
