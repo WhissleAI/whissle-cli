@@ -231,7 +231,7 @@ per-state turn-taking) with guardrails — never a model selector. This is what
 drives flow-based, guard-railed agents in evaluation harnesses.
 
 ```bash
-whissle agents flow show <id> [--json]                    # states / transitions / settings (+ derived workflow & guardrails)
+whissle agents flow show <id> [--draft] [--json]          # live flow, or inspect the staged draft
 whissle agents flow generate <id> --goal "verify the policy number first"  # AI-draft a starter flow (not saved)
 whissle agents flow set <id> --file flow.json             # author it (writes live)
 whissle agents flow set <id> --file flow.json --draft     # stage it as a draft instead

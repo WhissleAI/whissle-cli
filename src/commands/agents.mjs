@@ -58,7 +58,7 @@ export function unwrapFlow(parsed) {
   return parsed;
 }
 
-// Every tool a flow can reach: `allowed_tools` on a converse/tool state, plus the
+// Every tool a flow can reach: `allowed_tools` on a conversation/tool state, plus the
 // single `tool` a tool-type state invokes directly.
 export function flowToolRefs(flow) {
   const refs = new Map(); // tool name -> [state ids]
@@ -328,15 +328,21 @@ async function runFlow(verb, args, flags) {
   if (!verb) fatal(FLOW_USAGE);
 
   if (verb === "show") {
-    const id = args[0] || fatal("Usage: whissle agents flow show <agent-id> [--json]");
-    const a = await get(EP.agents.get(id));
-    if (flags.json) return printJson(a.flow ?? null);
-    if (!a.flow || !Object.keys(a.flow).length) {
-      out(dim(`  Agent ${id} has no conversation flow.`));
+    const id = args[0] || fatal("Usage: whissle agents flow show <agent-id> [--draft] [--json]");
+    const showingDraft = !!flags.draft;
+    const a = await get(EP.agents.get(id), {
+      query: showingDraft ? { include: "draft" } : undefined,
+    });
+    const flow = showingDraft ? a.draft?.flow : a.flow;
+    if (flags.json) return printJson(flow ?? null);
+    if (!flow || !Object.keys(flow).length) {
+      out(dim(`  Agent ${id} has no ${showingDraft ? "draft " : ""}conversation flow.`));
       out(dim(`  Draft one: whissle agents flow generate ${id} --goal "…"`));
       return;
     }
-    printFlow(a.flow);
+    if (showingDraft) out(dim("  draft flow (not live)"));
+    printFlow(flow);
+    if (showingDraft) return;
     // Best-effort derived views — a failure here never breaks `flow show`.
     try {
       const wf = await get(EP.agents.workflow(id));

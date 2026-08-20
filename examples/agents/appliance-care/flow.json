@@ -44,28 +44,28 @@
     {
       "id": "greet",
       "label": "Greet",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [],
       "goal": "Greet the customer and ask how you can help with their appliance. Keep it short. Do not ask for identifying details yet."
     },
     {
       "id": "identify_issue",
       "label": "Understand the issue",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [],
       "goal": "Understand what is wrong with the appliance. Listen for STOP-USE signals: a burning or chemical smell, smoke, sparks, a strange sound, or a hot surface. If ANY of those are present this is a safety condition and you must not troubleshoot. Otherwise establish the symptom, and any error code shown on the display. An error code, model number or serial number the customer reads out is REPORTED INPUT, not proof of identity. Note it, but never treat it as establishing which appliance you are dealing with."
     },
     {
       "id": "safety_stop_use",
       "label": "Stop-use safety condition",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [],
       "goal": "A stop-use safety condition is present. Tell the customer clearly to STOP using the appliance and unplug it, and do not give any troubleshooting or repair steps. Do not ask them to run, restart, open, tilt, or inspect the inside of the machine. Explain that this needs a qualified technician. Then identify them so the safety case can be recorded against the right appliance."
     },
     {
       "id": "identify_customer",
       "label": "Identify the customer",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "get_customer_by_phone",
         "get_customer_by_name"
@@ -75,7 +75,7 @@
     {
       "id": "resolve_appliance",
       "label": "Resolve the internal appliance record",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "list_owned_appliances",
         "identify_model",
@@ -86,7 +86,7 @@
     {
       "id": "disambiguate_model",
       "label": "Disambiguate the model",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "identify_model",
         "list_owned_appliances",
@@ -97,7 +97,7 @@
     {
       "id": "select_manual",
       "label": "Select the correct manual",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "search_manuals",
         "get_model_details",
@@ -108,7 +108,7 @@
     {
       "id": "troubleshoot",
       "label": "Troubleshoot from the manual",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "open_manual_section",
         "search_manuals",
@@ -122,7 +122,7 @@
     {
       "id": "unsupported_procedure",
       "label": "Procedure not in the manual",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "search_manuals",
         "open_manual_section"
@@ -132,7 +132,7 @@
     {
       "id": "open_case",
       "label": "Open a support case",
-      "type": "tool",
+      "type": "conversation",
       "allowed_tools": [
         "create_support_case",
         "escalate_safety_issue"
@@ -142,7 +142,7 @@
     {
       "id": "schedule_visit",
       "label": "Schedule a service visit",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "schedule_service",
         "check_warranty"
@@ -152,7 +152,7 @@
     {
       "id": "unidentified_transfer",
       "label": "Transfer an unidentified caller",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "transfer_to_human_agents"
       ],
@@ -161,7 +161,7 @@
     {
       "id": "escalate",
       "label": "Escalate to a human",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [
         "transfer_to_human_agents"
       ],
@@ -170,7 +170,7 @@
     {
       "id": "record_outcome",
       "label": "Record the resolution",
-      "type": "tool",
+      "type": "conversation",
       "allowed_tools": [
         "record_resolution"
       ],
@@ -179,9 +179,14 @@
     {
       "id": "close",
       "label": "Close the conversation",
-      "type": "converse",
+      "type": "conversation",
       "allowed_tools": [],
       "goal": "Confirm what was done and what happens next, ask if anything else is needed, and close politely. Do not reopen troubleshooting after the resolution is recorded."
+    },
+    {
+      "id": "end",
+      "label": "End call",
+      "type": "end"
     }
   ],
   "transitions": [
@@ -376,6 +381,13 @@
       "kind": "llm_condition",
       "priority": 10,
       "condition": "The resolution has been recorded."
+    },
+    {
+      "id": "close_to_end",
+      "from": "close",
+      "to": "end",
+      "kind": "always",
+      "priority": 10
     }
   ]
 }

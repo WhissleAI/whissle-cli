@@ -75,6 +75,35 @@ test("flowToolRefs deduplicates a tool used by several states", () => {
 
 // ── the real artifacts ───────────────────────────────────────────────────────
 
+test("the shipped ApplianceCare flow uses backend-supported state types and can end", () => {
+  const flow = JSON.parse(
+    readFileSync(new URL("../examples/agents/appliance-care/flow.json", import.meta.url), "utf8"),
+  );
+  const supported = new Set([
+    "conversation", "end", "say", "set_variable", "subagent", "tool", "transfer",
+  ]);
+  const invalid = flow.states
+    .filter((state) => !supported.has(state.type))
+    .map((state) => ({ id: state.id, type: state.type }));
+  assert.deepEqual(invalid, [], "flow contains a state type rejected by the backend");
+
+  const reachable = new Set([flow.start_state]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const transition of flow.transitions) {
+      if (reachable.has(transition.from) && !reachable.has(transition.to)) {
+        reachable.add(transition.to);
+        changed = true;
+      }
+    }
+  }
+  assert.ok(
+    flow.states.some((state) => state.type === "end" && reachable.has(state.id)),
+    "flow must have a reachable end state",
+  );
+});
+
 test("the shipped ApplianceCare flow matches the ApplianceCare tools exactly", () => {
   const flow = JSON.parse(
     readFileSync(new URL("../examples/agents/appliance-care/flow.json", import.meta.url), "utf8"),
