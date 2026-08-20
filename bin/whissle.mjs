@@ -84,7 +84,7 @@ ${bold("Configure agents")}
   whissle agents types                agent-type keys for --type (customer_support, …)
 
 ${bold("Conversation flow")}  ${dim("— the in-call state machine (flow-based, guard-railed agents)")}
-  whissle agents flow show <id> [--json]         states / transitions / settings (+ derived views)
+  whissle agents flow show <id> [--draft] [--json]  live flow, or the staged draft
   whissle agents flow set <id> --file flow.json [--draft]   author the flow (--draft stages it)
   whissle agents flow generate <id> --goal "…"   AI-draft a starter flow (not saved)
   whissle agents flow trace <id> --conversation <cid>   turn-by-turn step trace for one run

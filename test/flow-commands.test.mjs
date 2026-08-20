@@ -77,6 +77,13 @@ test("parse() reads the flow-set draft + file flags", () => {
   assert.equal(flags.draft, true); // boolean flag (no value follows)
 });
 
+test("parse() reads flow show --draft", () => {
+  const { positionals, flags } = parse(["flow", "show", "a1", "--draft", "--json"]);
+  assert.deepEqual(positionals, ["flow", "show", "a1"]);
+  assert.equal(flags.draft, true);
+  assert.equal(flags.json, true);
+});
+
 test("parse() reads flow generate --goal and flow trace --conversation", () => {
   const gen = parse(["flow", "generate", "a1", "--goal", "verify policy first"]);
   assert.equal(gen.flags.goal, "verify policy first");

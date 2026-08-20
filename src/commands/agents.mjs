@@ -58,6 +58,46 @@ export function unwrapFlow(parsed) {
   return parsed;
 }
 
+// Every tool a flow can reach: `allowed_tools` on a conversation/tool state, plus the
+// single `tool` a tool-type state invokes directly.
+export function flowToolRefs(flow) {
+  const refs = new Map(); // tool name -> [state ids]
+  for (const st of (flow?.states || [])) {
+    const names = [...(st.allowed_tools || []), ...(st.tool ? [st.tool] : [])];
+    for (const n of names) {
+      if (!refs.has(n)) refs.set(n, []);
+      refs.get(n).push(st.id);
+    }
+    // A transition may also gate on a tool having run.
+  }
+  for (const tr of (flow?.transitions || [])) {
+    if (!tr.requires_tool) continue;
+    if (!refs.has(tr.requires_tool)) refs.set(tr.requires_tool, []);
+    refs.get(tr.requires_tool).push(`transition:${tr.id}`);
+  }
+  return refs;
+}
+
+/**
+ * A flow that names a tool the agent does not have fails silently at runtime: the
+ * state machine routes to a state whose tool can never fire, so the agent improvises
+ * instead. Catch it at author time.
+ *
+ * Returns `{ missing, available, referenced }`; `missing` is [] when the flow is sound.
+ */
+export function validateFlowTools(flow, availableTools) {
+  const available = new Set(
+    (availableTools || []).map((t) => (typeof t === "string" ? t : t?.name)).filter(Boolean),
+  );
+  const referenced = flowToolRefs(flow);
+  const missing = [];
+  for (const [name, states] of referenced) {
+    if (!available.has(name)) missing.push({ tool: name, states });
+  }
+  missing.sort((a, b) => a.tool.localeCompare(b.tool));
+  return { missing, available: [...available].sort(), referenced: [...referenced.keys()].sort() };
+}
+
 async function ingestKnowledge(agentId, knowledge, baseDir, quiet) {
   let n = 0;
   for (const item of knowledge || []) {
@@ -288,15 +328,21 @@ async function runFlow(verb, args, flags) {
   if (!verb) fatal(FLOW_USAGE);
 
   if (verb === "show") {
-    const id = args[0] || fatal("Usage: whissle agents flow show <agent-id> [--json]");
-    const a = await get(EP.agents.get(id));
-    if (flags.json) return printJson(a.flow ?? null);
-    if (!a.flow || !Object.keys(a.flow).length) {
-      out(dim(`  Agent ${id} has no conversation flow.`));
+    const id = args[0] || fatal("Usage: whissle agents flow show <agent-id> [--draft] [--json]");
+    const showingDraft = !!flags.draft;
+    const a = await get(EP.agents.get(id), {
+      query: showingDraft ? { include: "draft" } : undefined,
+    });
+    const flow = showingDraft ? a.draft?.flow : a.flow;
+    if (flags.json) return printJson(flow ?? null);
+    if (!flow || !Object.keys(flow).length) {
+      out(dim(`  Agent ${id} has no ${showingDraft ? "draft " : ""}conversation flow.`));
       out(dim(`  Draft one: whissle agents flow generate ${id} --goal "…"`));
       return;
     }
-    printFlow(a.flow);
+    if (showingDraft) out(dim("  draft flow (not live)"));
+    printFlow(flow);
+    if (showingDraft) return;
     // Best-effort derived views — a failure here never breaks `flow show`.
     try {
       const wf = await get(EP.agents.workflow(id));
@@ -315,6 +361,25 @@ async function runFlow(verb, args, flags) {
     if (!flags.file) fatal("--file flow.json is required.");
     const parsed = JSON.parse(readFileSync(flags.file, "utf8"));
     const flow = unwrapFlow(parsed);
+
+    // Guard: a flow naming a tool the agent lacks routes to a dead state at runtime
+    // and the agent improvises instead of calling the tool. Check before writing.
+    // `--tools-from` supplies the authoritative list when tools are injected at run
+    // time (a benchmark harness) rather than configured on the agent.
+    const toolSource = flags["tools-from"]
+      ? JSON.parse(readFileSync(flags["tools-from"], "utf8"))
+      : (await get(EP.agents.get(id))).tools;
+    const { missing, available } = validateFlowTools(flow, toolSource);
+    if (missing.length) {
+      err(`Flow references ${missing.length} tool(s) not available on this agent:`);
+      for (const m of missing) err(`  ${m.tool}  (used by: ${m.states.join(", ")})`);
+      err(`Agent has: ${available.join(", ") || "(none)"}`);
+      if (!flags["allow-unknown-tools"]) {
+        fatal("Refusing to write. Enable the tools on the agent, fix the flow, or pass --allow-unknown-tools.");
+      }
+      err("Continuing anyway (--allow-unknown-tools).");
+    }
+
     const target = flags.draft ? "draft" : "live";
     const a = await patch(EP.agents.update(id), { flow }, { query: { target } });
     if (flags.json) return printJson(a);
