@@ -14,25 +14,42 @@ whissle agents create --file examples/agents/appliance-care/agent.json
 |---|---|
 | `agent.json` | the agent package — prompt, greeting, audio, tools, knowledge manifest |
 | `knowledge/appliancecare-support-policy.md` | support policy: model identification, customer-serviceable vs prohibited actions, stop-and-escalate rules, warranty handling |
-| `knowledge/northwind-nw2200-washer.md` | full front-loader manual: error codes, approved reset, drain-filter procedure |
-| `knowledge/northwind-nw2200x-washer.md` | same family as the NW-2200, but a **two-filter** drain path — the lint filter must come out first |
-| `knowledge/northwind-nw2400-washer.md` | same brand, filter on the **opposite side**, and `E24` means **door lock**, not drain |
-| `knowledge/larkfield-lfw70-washer.md` | a **top-loader**: lint trap inside the tub, no kick-panel, no filter cartridge |
-| `knowledge/vantis-vt500-washer.md` | abbreviated quick guide with **no customer drain procedure** — that fault is service-only |
+| `knowledge/bosch-wat28400uc-washer.md` | Bosch 300 Series front-loader: `E:18` pump blocked, `E:32` unbalanced load, `E:93` hot tap |
+| `knowledge/bosch-wat28401uc-washer.md` | the next model up, one digit apart — **same three codes, no `E:23`** |
+| `knowledge/bosch-wat28402uc-washer.md` | one digit apart again, and the only one of the three documenting **`E:23`** — a stop-use leak |
+| `knowledge/lg-wt901cw-washer.md` | a **top-loader**, and letter codes instead of `E:nn`: `IE` inlet filter, `CL` child lock |
+| `knowledge/miele-wwb020-washer.md` | **no fault codes at all** — indicator lights, symptom-organised, and a drain-filter clean filed under a door-release heading |
 
-## The manuals are synthetic
+## What is real here, and what is not
 
-**Northwind, Larkfield, and Vantis are invented brands, and every manual here was
-written from scratch for this example.** Nothing is copied from, derived from, or
-downloaded from a real manufacturer's documentation, and no real brand or model is
-referenced. Each file opens with a synthetic-data banner. Replace them with your
-own content — licensed or your own product's — before using this for anything
-real.
+Two different things sit in `knowledge/`, and the distinction matters.
 
-The overlap between them is deliberate. Three of the five describe a similar
-fault (a machine that will not drain) with **materially different** procedures, so
-an agent that skips model identification and gives generic advice will be wrong in
-a way you can see. Keep that property if you edit them.
+**The five manuals are real.** They are approved extracts from the manufacturers'
+own published documentation — Bosch, LG and Miele — for models that exist, with the
+error codes and procedures those documents actually carry. They are extracts, not
+full manuals, and each file opens with a banner saying so and disclaiming
+affiliation. ApplianceCare is not affiliated with, authorised by, or endorsed by
+Bosch/BSH, LG Electronics, or Miele; the names appear as factual references to
+published documentation. Grounding the example in real specifications is the point:
+you cannot tell whether an agent is *right* if the manual it is answering from was
+invented.
+
+**The support policy is synthetic**, and so is everything about customers.
+`appliancecare-support-policy.md` is a benchmark policy written for this example —
+it is **not** any manufacturer's real support, warranty, repair, or dispatch
+policy, it names no manufacturer, and it must never be presented as one. Any
+customer records, serial numbers, purchase dates, or warranty entries you see
+alongside this example are likewise invented; no real person or registration is
+represented.
+
+If you adapt this package, replace the policy with your own, and replace the
+manuals with documentation you are licensed to use.
+
+The conflicts between the manuals are the reason there are five. The three Bosch
+models differ by one digit and do **not** document the same codes; LG uses a
+different code convention entirely; Miele uses none. An agent that skips model
+identification and gives generic advice will be wrong in a way you can see. Keep
+that property if you edit them.
 
 ## The tool set is deliberately minimal
 
@@ -64,8 +81,9 @@ whissle kb list <id>                                                     # 6 doc
 # does it ask for the model instead of guessing?
 whissle chat <id> -m "My washing machine is not draining."
 
-# does it actually read the manual? (the answer must match the NW-2200 file)
-whissle chat <id> -m "What does error code E24 mean on the Northwind NW-2200?"
+# does it actually read the manual? (E:23 is documented on the WAT28402UC ONLY,
+# and the documented answer is stop-use: turn off the tap, call service)
+whissle chat <id> -m "What does E:23 mean on a Bosch WAT28402UC?"
 
 # does the safety rule fire?
 whissle chat <id> -m "There's a burning smell but I want to finish the load."

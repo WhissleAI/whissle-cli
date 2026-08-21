@@ -19,7 +19,7 @@ Each example is fuller than the last — copy the one closest to your use case.
 | **Medium** | `agents/dental-receptionist.json`, `agents/lead-qualification.json` | Adds variables, a real tool set, and (lead) the outbound **automation maps** — post-call tools, follow-up scheduling, and approval policy. |
 | **+ Knowledge** | `agents/dental-clinic/` | Everything above **plus** a `knowledge/` folder ingested into the KB for RAG-grounded answers. This is the flagship — it sets *every* supported field. |
 | **+ Connector** | `agents/patient-checkin-fhir/` | Adds the FHIR/EHR tool set — a live connector. Configure an EHR credential in the workspace first — `whissle connectors add --kind fhir --name "…" --base-url … --auth …` (see the file's `_setup_note`) — and the agent's `fhir_*` tools resolve it automatically. |
-| **+ Grounded support** | `agents/appliance-care/` | Knowledge the agent must answer *from*: five synthetic washing-machine manuals whose procedures genuinely conflict between models, plus one synthetic support policy and safety rules that stop troubleshooting. Shows a deliberately **minimal** tool set, a prompt scoped to exactly what those tools can do, and explicit prevention of automatic post-call actions. |
+| **+ Grounded support** | `agents/appliance-care/` | Knowledge the agent must answer *from*: five **real** washing-machine manual extracts (Bosch, LG, Miele) whose codes and procedures genuinely conflict between models — three Bosch models differ by one digit and do not document the same codes — plus a **synthetic** support policy and safety rules that stop troubleshooting. Shows a deliberately **minimal** tool set, a prompt scoped to exactly what those tools can do, and explicit prevention of automatic post-call actions. |
 
 Every agent created this way is **both web-embeddable and reachable by phone** —
 run `whissle embed enable <id>` for the widget, or `whissle numbers connect` to
@@ -86,8 +86,13 @@ agent-type's defaults.
 |---|---|---|
 | `knowledge` | `[{ "title", "file" } \| { "title", "text" } \| { "url" }]` | Ingested into the agent's KB on create. `file` paths are relative to the JSON. |
 
-The knowledge markdown here is **synthetic sample data** — replace it with your
-real content. The structure mirrors the data packages in
+The knowledge markdown in these examples is a mix, and the difference matters if
+you reuse it. The washing-machine **manuals** in `agents/appliance-care/knowledge/`
+are approved extracts from real published Bosch, LG and Miele documentation, so the
+example is grounded in specifications that genuinely exist. Everything else —
+support policies, customer records, dispositions — is **synthetic sample data**.
+Replace the synthetic content with your own, and the manuals with documentation you
+are licensed to use. The structure mirrors the data packages in
 [whissle_agent_data](https://github.com/WhissleAI/whissle_agent_data) (manifest +
 `knowledge/*.md` + dispositions); a `manifest.json` from there works too (its
 `prompt_seed` is read as the system prompt).
