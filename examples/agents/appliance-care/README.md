@@ -20,6 +20,8 @@ whissle agents create --file examples/agents/appliance-care/agent.json
 | `knowledge/lg-wt901cw-washer.md` | a **top-loader**, and letter codes instead of `E:nn`: `IE` inlet filter, `CL` child lock |
 | `knowledge/miele-wwb020-washer.md` | **no fault codes at all** — indicator lights, symptom-organised, and a drain-filter clean filed under a door-release heading |
 
+The three brands are also built differently, which is the point of having three: Bosch has a **drain pump** behind a service cover (its manuals never say *filter*), LG has **two lint filters clipped inside the drum** that are not part of the drain path at all, and Miele has a **screw-in drain filter** behind a pump flap. An agent that carries one brand's procedure to another sends the customer to a part their machine does not have.
+
 ## What is real here, and what is not
 
 Two different things sit in `knowledge/`, and the distinction matters.
