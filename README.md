@@ -63,6 +63,29 @@ Or set `WHISSLE_API_KEY` in the environment (handy for CI). The CLI talks to the
 production gateway by default (`aws-gateway-backend.whissle.ai/bot`); point it
 elsewhere with `WHISSLE_BASE_URL` or `--base-url`.
 
+### Cloud or self-hosted
+
+The CLI works the same way against **Whissle Central** (the managed cloud, the
+default) or your **own self-hosted gateway** — the API surface is identical, only
+the base URL differs:
+
+| Deployment | Base URL |
+|---|---|
+| Whissle Central (default) | `https://aws-gateway-backend.whissle.ai/bot` |
+| Host it yourself | `https://your-gateway.example.com/bot` |
+
+```bash
+export WHISSLE_BASE_URL="https://your-gateway.example.com/bot"
+# …or per command:
+whissle agents list --base-url https://your-gateway.example.com/bot
+```
+
+The **`/bot` prefix is required** either way — it is the gateway's route prefix,
+not decoration (`/bot/api/whoami` answers 401 without a key; `/api/whoami` without
+the prefix 404s). To stand up your own gateway — the lightweight backend, or the
+full stack with on-prem GPU speech — see the
+[self-host guide](https://www.whissle.ai/docs/self-host).
+
 > **Scopes matter.** Each command needs the matching scope on your key, and
 > scopes are **fixed when the key is created**. Mint a key with the scopes you
 > need — a `403 … missing required scope` names the one you're missing. See
