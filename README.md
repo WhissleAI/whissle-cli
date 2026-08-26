@@ -18,7 +18,7 @@ not alternatives — most integrations use two.
 | **[`@whissle/cli`](https://www.npmjs.com/package/@whissle/cli)** (this one) | your terminal, a CI job | `wsk_` workspace **secret** | the control plane: configure, run, and read back the workspace |
 | **[`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)** | the **browser** | `wpk_` **publishable** | embed a live voice agent in a web page |
 | **[`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk)** | server-side **Node** | `wsk_` workspace **secret** | the same control plane from your own backend — never in client code |
-| **[`whissle_sdk`](https://github.com/WhissleAI/whissle-python)** | server-side **Python** | `wsk_` workspace **secret** | the same, for Python jobs, evals and notebooks |
+| **`whissle_sdk` (Python, request self-host access)** | server-side **Python** | `wsk_` workspace **secret** | the same, for Python jobs, evals and notebooks |
 
 A typical embed uses two of them: `@whissle/sdk` (or this CLI) on your server to
 mint each visitor a short-lived session token, and `@whissle/agents` in the page
@@ -720,7 +720,7 @@ esac
 
 | Key | Where it runs | What it can do |
 |---|---|---|
-| `wsk_…` secret | server / CLI (this tool), [`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk), [`whissle_sdk`](https://github.com/WhissleAI/whissle-python) | everything your scopes allow — manage the workspace, read all records |
+| `wsk_…` secret | server / CLI (this tool), [`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk), `whissle_sdk` (Python, request self-host access) | everything your scopes allow — manage the workspace, read all records |
 | `wpk_…` publishable | the browser ([`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)) | start a voice session with one agent, nothing else |
 
 **Never put a `wsk_` key in a browser.**
@@ -731,7 +731,6 @@ Plain Node ESM, no build step. `src/api.mjs` is a **single, self-contained
 gateway client** (bearer auth, JSON + multipart, error surfacing, org
 resolution) with no CLI-specific imports — so every HTTP request lives in one
 place, and it mirrors the standalone server-side TypeScript client
-([`whissle-sdk`](https://github.com/WhissleAI/whissle-sdk), npm name
-`@whissle/sdk`). Each
+(`@whissle/sdk`, [published on npm](https://www.npmjs.com/package/@whissle/sdk)). Each
 command group is `src/commands/<name>.mjs` exporting `run(sub, args, flags)`;
 `bin/whissle.mjs` parses args and dispatches. See `CLAUDE.md` for the internals.
