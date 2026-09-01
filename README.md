@@ -123,6 +123,7 @@ whissle agents versions <id>                      # saved-config history (every 
 whissle agents rollback <id> <version-id>         # restore that version's content; deployment untouched
 whissle agents clone <id>                         # duplicate as an undeployed draft ("<name> (copy)")
 whissle agents types                              # agent-type keys for --type (customer_support, …)
+whissle voices [--language hi] [--gender female]  # what a (voice, voice_gender) pair actually sounds like
 whissle chat <agent-id>                           # interactive text turn
 whissle chat <agent-id> -m "what are your hours?" # one-shot
 whissle chat <agent-id> -m "and on Sundays?" --conversation <cid>   # continue that thread
@@ -267,6 +268,45 @@ whissle agents flow trace <id> --conversation <cid>       # turn-by-turn step tr
 wrapper `{ "flow": { … } }`. A `flow` key inside an `agents create/update --file`
 package is also applied, so a whole agent + flow ships in one file.
 
+### Simulations (rehearse an agent before callers do)
+
+A **scenario** is a persona + a goal + success criteria a judge can verify from
+the transcript alone. `simulate` plays scenarios against the agent's **real
+assembled brain** — the same prompt assembly the live channels use — with an AI
+playing the caller, then a strict judge records pass/fail with its reasoning.
+Runs execute in the background; poll `runs` for verdicts.
+
+```bash
+whissle agents scenarios <id>                     # the agent's test scenarios
+whissle agents scenarios <id> generate            # AI-draft a suite from the agent's own prompt
+whissle agents scenarios <id> add --title "Angry reschedule" \
+  --persona "You are a rushed caller…" --goal "Move Thursday to Friday" \
+  --criteria "The agent confirms the new slot before hanging up"
+whissle agents scenarios <id> delete <scenario-id>
+whissle agents simulate <id>                      # run the newest scenarios (or --scenario <sid> …)
+whissle agents simulate <id> runs                 # verdicts; transcripts in --json (.runs[].transcript)
+```
+
+Conversation-only for now: the agent's tools are not offered during a run, so a
+simulation exercises conversational handling, not tool execution.
+
+### Reports (the AI reads your transcripts and reports back)
+
+```bash
+whissle reports                                   # last 20 reports, with status
+whissle reports generate [--agent <id>] [--days 30] \
+  --question "What do callers ask that we can't answer?" --question "…"   # up to 5
+whissle reports show <report-id>                  # the finished markdown report
+whissle reports corpus [--agent <id>] [--days 30] [--out corpus.txt]
+```
+
+`generate` queues a background analyst run over the window's transcripts — what
+callers wanted, where conversations dropped, what the agent couldn't answer,
+answers to your questions, each claim citing conversations. It polls from the
+list (a report is `queued → done|error`; `show` says which). `corpus` is the
+anti-lock-in valve: the **same** transcript window as plain text, so you can
+take your own data to any AI you like.
+
 ### Calls & outbound campaigns
 ```bash
 whissle calls start --agent <id> --to +14155550123 \
@@ -374,8 +414,24 @@ whissle compliance settings                       # the rules the dial engine en
 whissle compliance settings set --window-start 9 --window-end 20 --timezone America/New_York
 whissle compliance settings set --require-consent true --disclosure-required true --retention-days 365
 whissle compliance settings set --file settings.json
+whissle compliance settings set --contacts-are-customers true   # "my contacts gave me their numbers"
+whissle compliance settings set --outreach-attested true        # "I have a lawful basis for my outreach lists"
 whissle compliance events --days 30               # what the rules DID (blocked dials, disclosures)
+whissle compliance readiness                      # every blocker before autonomous calling, with the fix for each
+whissle compliance erase +14155550123 --force     # GDPR/CCPA erasure — irreversible, so it insists on --force
 ```
+
+The two `settings set` attestations are one-time checkboxes, and they are what
+`readiness` asks for: the customer relationship is the lawful basis for
+informational calls, and for cold outreach you attest once that you have a
+lawful basis for your lists — the platform enforces what protects the called
+party (DNC, revocation, hours, disclosure) and keeps the evidence trail.
+
+`erase` deletes everything held about one person — calls and their recordings,
+SMS, scheduled calls, consents, the contact — and deliberately **keeps** two
+things: the Do-Not-Call entry and the erasure event itself. Forgetting that
+someone asked never to be called again would cause the very harm the request
+was meant to prevent.
 The DNC list is also written automatically by the `stop_calling` post-call tool,
 and enforcement happens **pre-dial** on the backend — this surface is the audit
 trail and the controls.
@@ -467,9 +523,15 @@ your page  ──"start"──▶  YOUR backend  ──whissle embed token──
                               │
                               ╰── short-lived token ──▶  your page
                                                             │
-                                          POST /api/embed/offer?token=…  (voice, SDP)
-                                          POST /api/embed/chat/turn      (text)
+                                          POST <transport.connect>?token=…  (voice)
+                                          POST /api/embed/chat/turn         (text)
 ```
+
+The mint response carries a **`transport` descriptor** — which door to open,
+the method, how to present the token, the fallback and the readiness signal —
+and `embed token` prints its connect hints **from that descriptor**, so what it
+tells you to call is what your gateway actually advertises rather than a
+hardcoded guess.
 
 Minting with your **secret** (`wsk_`) key makes the session *server-trusted*: the
 token carries no origin, so it works from any page and survives a media
@@ -520,6 +582,22 @@ whissle analytics options                         # available metrics/dimensions
 whissle analytics charts                          # saved charts
 ```
 
+### Alerts (thresholds watched server-side)
+```bash
+whissle alerts rules                              # your alert rules
+whissle alerts rules add --name "Completion dropped" --metric completion_rate \
+  --comparator below --threshold 0.6 [--agent <id>] [--window-hours 24] \
+  [--min-calls 10] [--cooldown-hours 24]
+whissle alerts rules update <rule-id> --threshold 0.5 | delete <rule-id>
+whissle alerts rules test <rule-id>               # measure it RIGHT NOW — would it fire?
+whissle alerts options                            # the valid metrics + comparators
+whissle alerts events --days 30                   # what actually fired
+```
+Rules are evaluated on a server-side loop and email you when they fire (turn
+that off per rule with `--notify-email false`). `test` runs the same measurement
+inline with no event row, no email and no cooldown consumed — sanity-check a new
+rule instead of waiting a tick for it. Rule writes need an owner/admin key.
+
 ### Campaigns (server-side, managed)
 ```bash
 whissle campaigns list
@@ -532,8 +610,8 @@ these are campaigns the platform manages.
 
 ### Meetings (notetaker)
 ```bash
-whissle meetings list
-whissle meetings get <id>
+whissle meetings list                             # includes each meeting's one-line notes summary
+whissle meetings get <id>                         # + the full notes: summary, key points, decisions, action items
 whissle meetings schedule --url https://meet.google.com/abc-defg-hij [--agent <id>] [--title "Standup"]
 whissle meetings cancel <id>
 ```
@@ -550,7 +628,11 @@ whissle memory delete <id>
 ```bash
 whissle keys list | create --name "ci" --scopes a,b,c [--type secret|publishable] | reveal <id> | delete <id>
 whissle team list | invite --email person@co.com --role owner|admin|member | revoke <id>
-whissle usage                                     # wallet balance + ledger
+whissle usage                                     # the MONEY view: wallet balance + ledger
+whissle usage summary [--days 30] [--channel voice]   # the METERING view: totals per service + per-day
+whissle usage events [--days 30] [--service llm] [--channel …] [--limit 100] [--offset 0]
+whissle usage sessions --day 2026-08-30 [--channel voice]   # per-session breakdown for one day
+whissle usage export [--days 30] [--out usage.csv]    # the whole window as CSV (--out - for stdout)
 whissle models chat "Summarize this" --fast
 whissle models tts "Hello" --out hi.mp3                       # English (default)
 whissle models tts "नमस्ते, कैसे हैं आप?" --language hi --out namaste.mp3   # speaks Hindi
@@ -618,7 +700,9 @@ didn't exist when it was made.
 | **meetings** | `meetings:read` / `meetings:write` |
 | **memory** | `memory:read` / `memory:write` |
 | models | `models:invoke` |
-| usage | `billing:read` |
+| usage (the wallet) | `billing:read` |
+| **usage summary/events/sessions/export** | `usage:read` |
+| **voices, reports, simulations, alerts** | any valid key — the key resolves the org *(alert-rule writes need an owner/admin key)* |
 
 ## Scripting contract
 

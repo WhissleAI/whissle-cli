@@ -49,6 +49,12 @@ src/commands/
   agents.mjs           list / get / create / update / delete / versions / rollback / clone   (agents:read/write)
                        create --file agent.json = full package: create + PATCH audio/config + ingest knowledge.
                        CREATE_FIELDS vs PATCH_FIELDS decide the two-step apply — keep examples/README.md in sync.
+                       Also `scenarios <id> [generate|add|delete]` + `simulate <id> [runs]` (routes/simulations.py):
+                       rehearse the agent against persona/goal/criteria scenarios; runs are background, judge-scored,
+                       polled via `simulate <id> runs`. Conversation-only — the agent's tools are not offered.
+  voices.mjs           the studio voice catalog (GET /api/voices) — what an agent's (voice, voice_gender)
+                       pair resolves to at call time, derived from the SAME tables the call path uses.
+                       Engine/voice ids in the response are data; keep help/README provider-neutral.
   chat.mjs             interactive + one-shot text turn → POST /api/agents/{id}/chat/turn
                        Sends source:"cli" + a per-run session_id so each run is its own
                        SESSION in the studio's history (not one shared per-key thread),
@@ -82,8 +88,11 @@ src/commands/
                        Pure shapers (summarize/groupByTurn/partitionEvents/*Lines) are exported + unit-tested.
   actions.mjs          list / approve / reject / scheduled / cancel-scheduled   (actions:read/write; /api/actions —
                        NOT org-prefixed. The human-approval queue for held post-call actions + scheduled follow-ups.)
-  compliance.mjs       suppressions / suppress / unsuppress / settings [set] / events   (compliance:read/write;
-                       org-scoped: /api/orgs/{org}/compliance — Do-Not-Call list, dial rules, evidence trail)
+  compliance.mjs       suppressions / suppress / unsuppress / settings [set] / events / readiness / erase
+                       (compliance:read/write; org-scoped: /api/orgs/{org}/compliance — Do-Not-Call list, dial
+                       rules, evidence trail). `settings set` also takes the two one-time attestations
+                       (--contacts-are-customers / --outreach-attested); `readiness` = named blockers + fixes;
+                       `erase` = GDPR/CCPA erasure (insists on --force; keeps the DNC entry + erasure event).
   kb.mjs               list / add (text|file|url) / update / remove   (kb:read/write)
                        update/remove act on ONE document (EP.agents.kb.doc). They're what makes a
                        knowledge sync idempotent — without them a re-push only ever ADDS, so an
@@ -95,7 +104,10 @@ src/commands/
                        token = the RUNTIME half: mint a per-visitor session token (EP.embed.*, the
                        PUBLIC /api/embed/* routes). A wsk_ mint is SERVER-TRUSTED — the token carries
                        no origin, so a partner backend hands it to any browser without allowlisting
-                       an origin here. --avatar chains the browser-direct Simli mint.
+                       an origin here. --avatar chains the browser-direct Simli mint. Connect hints
+                       come from the mint response's `transport` descriptor (connectHints(), pure,
+                       tested) — never hardcode /api/embed/offer; older gateways without a
+                       descriptor fall back to the known doors.
   numbers.mjs          list / available / search / buy / claim / connect / release  (numbers:read/write; /api/orgs/{org}/twilio)
   integrations.mjs     catalog / list / add / connect / attach / detach / remove   (MCP connector store; org-scoped: /api/orgs/{org}/integrations) †
   models.mjs           chat / tts / transcribe                  (models:invoke)
@@ -107,8 +119,18 @@ src/commands/
   analytics.mjs        query / options / charts                 (analytics:read; org-scoped: /api/orgs/{org}/analytics)
   campaigns.mjs        list / get / create / action             (campaigns:read/write; /api/campaigns — SERVER-SIDE managed, vs. `calls campaign` = client-side CSV batching)
   meetings.mjs         list / get / schedule / cancel           (notetaker; /api/meetings) †
+                       list rows carry a SLIM notes ({summary}) → the SUMMARY column; `get` renders the full
+                       notes (summary, key_points, decisions, action_items) when the meeting has finalized.
   memory.mjs           list / add / confirm / delete            (Company Brain; org-scoped: /api/orgs/{org}/memory) †
-  usage.mjs            wallet balance + ledger                  (/api/orgs/{org}/wallet)
+  usage.mjs            bare = the MONEY view (wallet balance + ledger, /api/orgs/{org}/wallet, billing:read);
+                       summary / events / sessions / export = the METERING view (/api/orgs/{org}/usage/*,
+                       usage:read — the append-only usage_events table; export streams the window as CSV).
+  reports.mjs          list / generate / show / corpus          (/api/reports — background analyst runs over a
+                       transcript window; NO per-report GET exists, `show` picks from the list. `corpus` is the
+                       plain-text window via raw(); anti-lock-in on purpose.)
+  alerts.mjs           rules [add|update|delete|test] / options / events   (/api/alerts — metric thresholds
+                       evaluated server-side; `rules test` measures inline with no event/email/cooldown.
+                       Rule writes need an owner/admin key.)
 
   † These backend routes are cookie-auth today; a parallel backend PR makes them
     `wsk_`-key-authable. The CLI commands are correct and light up once that lands.

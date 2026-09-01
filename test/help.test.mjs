@@ -9,7 +9,8 @@ import { helpFor } from "../bin/whissle.mjs";
 // Every group the entry point can dispatch to. Kept as a literal list on
 // purpose: if a group is added without a line in HELP, this test says so.
 const GROUPS = [
-  "agents", "chat", "companion", "calls", "sessions", "actions", "compliance", "kb", "tools",
+  "agents", "voices", "chat", "companion", "calls", "sessions", "actions", "compliance",
+  "reports", "alerts", "kb", "tools",
   "connectors", "numbers", "integrations", "embed", "models", "keys", "team",
   "customers", "appointments", "sms", "analytics", "campaigns", "meetings",
   "memory", "usage", "config",
