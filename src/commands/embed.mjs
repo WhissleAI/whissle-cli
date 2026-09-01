@@ -45,6 +45,46 @@ export function openUrls(baseUrl) {
   return { voice: `${baseUrl}${EP.embed.offer}`, text: `${baseUrl}${EP.embed.chatTurn}` };
 }
 
+/**
+ * The connect hints, derived from the mint response's `transport` descriptor —
+ * the server SAYS which transport to use and where its credentials come from,
+ * and hardcoding /api/embed/offer here sent every integrator to the fallback
+ * even when the gateway advertised a better door. Descriptor paths may be
+ * relative (the default: the client already knows the host + prefix it reached
+ * the mint through), so absolutize against the configured base URL; `auth:
+ * "query:token"` means the session token rides the query string. A gateway old
+ * enough to mint without a descriptor gets the previous hardcoded hints.
+ * Pure — exported for tests. Returns [{label, method, url, note}].
+ */
+export function connectHints(transport, baseUrl) {
+  if (!transport || typeof transport !== "object") {
+    const urls = openUrls(baseUrl);
+    return [
+      { label: "voice", method: "POST", url: `${urls.voice}?token=<token>`, note: "SDP offer" },
+      { label: "text", method: "POST", url: urls.text, note: "{token, message}" },
+    ];
+  }
+  const abs = (u) => (u && !/^[a-z]+:\/\//i.test(u) ? `${baseUrl}${u}` : u || "");
+  const door = (d) => ({
+    method: d?.method || "POST",
+    url: abs(d?.url) + (d?.auth === "query:token" ? "?token=<token>" : ""),
+  });
+  const hints = [];
+  for (const t of [transport, ...(transport.fallbacks || [])]) {
+    if (!t?.connect) continue;
+    const fallback = t === transport ? "" : " (fallback)";
+    const note =
+      t.kind === "livekit"
+        ? `returns {url, token, room} — join the room${t.url ? ` at ${t.url}` : ""}`
+        : "SDP offer" + (t.trickle_ice ? `; trickle ICE: ${door(t.trickle_ice).method} same door` : "");
+    hints.push({ label: `voice · ${t.kind || "webrtc"}${fallback}`, ...door(t.connect), note });
+  }
+  if (transport.text?.connect) {
+    hints.push({ label: "text", ...door(transport.text.connect), note: "{token, message}" });
+  }
+  return hints.length ? hints : connectHints(null, baseUrl);
+}
+
 function show(cfg) {
   if (!cfg.embed_enabled) {
     out(dim("  Embedding is OFF. Turn it on: ") + "whissle embed enable <agent-id> --origin https://yoursite.com");
@@ -135,10 +175,13 @@ export async function run(sub, args, flags) {
       out("\n  " + dim("avatar (browser-rendered):"));
       kv({ face_id: avatar.face_id, session_token: avatar.session_token });
     }
-    const urls = openUrls(cfg.baseUrl);
+    // The hints come from the mint's own `transport` descriptor — what the
+    // server says to use, not what this CLI version happens to remember.
+    const hints = connectHints(session.transport, cfg.baseUrl);
     out("\n  " + dim("Open the session from your page:"));
-    out(dim(`    voice  POST ${urls.voice}?token=<token>   (SDP offer)`));
-    out(dim(`    text   POST ${urls.text}              ({token, message})`));
+    for (const h of hints) {
+      out(dim(`    ${h.label.padEnd(Math.max(...hints.map((x) => x.label.length)))}  ${h.method} ${h.url}   (${h.note})`));
+    }
     return;
   }
 

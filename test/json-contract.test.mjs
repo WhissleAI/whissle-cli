@@ -108,8 +108,8 @@ function runOffline(args) {
 
 test("every group's --help works with no key, no config and no gateway", () => {
   const groups = [
-    "agents", "chat", "companion", "calls", "sessions", "actions", "compliance",
-    "kb", "tools", "connectors", "numbers", "integrations", "embed", "models",
+    "agents", "voices", "chat", "companion", "calls", "sessions", "actions", "compliance",
+    "reports", "alerts", "kb", "tools", "connectors", "numbers", "integrations", "embed", "models",
     "keys", "team", "customers", "appointments", "sms", "analytics", "campaigns",
     "meetings", "memory", "usage", "config",
   ];

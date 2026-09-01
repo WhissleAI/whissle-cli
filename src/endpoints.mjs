@@ -55,6 +55,16 @@ export const EP = {
     flowTrace: (id) => `/api/agents/${id}/flow/trace`,
     publish: (id) => `/api/agents/${id}/publish`,
     discardDraft: (id) => `/api/agents/${id}/draft/discard`,
+    // Simulations (routes/simulations.py): rehearse the agent against realistic
+    // caller scenarios. `scenarios` is the base — GET lists, POST adds a manual
+    // one; `scenariosGenerate` has the LLM write a suite from the agent's OWN
+    // assembled prompt. `simulationsRun` plays scenarios against the agent's
+    // real brain in the background; poll `simulations` for verdicts.
+    scenarios: (id) => `/api/agents/${id}/scenarios`,
+    scenario: (id, sid) => `/api/agents/${id}/scenarios/${sid}`,
+    scenariosGenerate: (id) => `/api/agents/${id}/scenarios/generate`,
+    simulations: (id) => `/api/agents/${id}/simulations`,
+    simulationsRun: (id) => `/api/agents/${id}/simulations/run`,
   },
 
   // ── the COMPANION: the caller's own assistant, not an org agent ─────────────
@@ -200,6 +210,35 @@ export const EP = {
   // ── agent-type blueprints (discovery: /api/agent-types) ──────────────────────
   agentTypes: "/api/agent-types",
 
+  // ── the studio voice catalog (routes/voices.py) ──────────────────────────────
+  // What an agent's (voice = language, voice_gender) pair actually resolves to
+  // at call time — derived from the SAME tables the pipeline resolves through,
+  // so it cannot drift from what a call does. Distinct from `models.voices`,
+  // the à-la-carte model-API catalog. Key resolves the org; not org-prefixed.
+  voices: "/api/voices",
+
+  // ── alert rules + the fired-event trail (routes/alerts.py) ───────────────────
+  // Self-service metric thresholds evaluated server-side on a loop. `ruleTest`
+  // measures a rule RIGHT NOW (no event row, no email, no cooldown consumed).
+  // Key resolves the org, so NOT org-prefixed.
+  alerts: {
+    options: "/api/alerts/options",
+    rules: "/api/alerts/rules",
+    rule: (id) => `/api/alerts/rules/${id}`,
+    ruleTest: (id) => `/api/alerts/rules/${id}/test`,
+    events: "/api/alerts/events",
+  },
+
+  // ── AI transcript reports (routes/reports.py) ────────────────────────────────
+  // `generate` queues a background analyst run over a transcript window; poll
+  // `list` for the finished markdown. `corpus` hands the SAME window back as
+  // plain text — the operator's data, portable to any AI they like.
+  reports: {
+    list: "/api/reports",
+    generate: "/api/reports/generate",
+    corpus: "/api/reports/corpus",
+  },
+
   // ── org-scoped: call analytics (/api/orgs/{org}/analytics) ───────────────────
   analytics: {
     query: (org) => `/api/orgs/${org}/analytics/query`,
@@ -223,6 +262,11 @@ export const EP = {
     suppression: (org, phone) => `/api/orgs/${org}/compliance/suppressions/${phone}`,
     settings: (org) => `/api/orgs/${org}/compliance/settings`,
     events: (org) => `/api/orgs/${org}/compliance/events`,
+    // Erasure (GDPR/CCPA): POST {phone_number} — deletes the person's records,
+    // KEEPS the do-not-call entry + the erasure event (compliance:write, owner/admin).
+    erase: (org) => `/api/orgs/${org}/compliance/erase`,
+    // "Am I allowed to turn autonomous calling on yet?" — named blockers + fixes.
+    readiness: (org) => `/api/orgs/${org}/compliance/readiness`,
   },
 
   // ── org-scoped: stored connector credentials (/api/orgs/{org}/credentials) ───
@@ -297,6 +341,16 @@ export const EP = {
     update: (org, id) => `/api/orgs/${org}/tools/${id}`,
     del: (org, id) => `/api/orgs/${org}/tools/${id}`,
     attach: (org, id) => `/api/orgs/${org}/tools/${id}/attach`,
+  },
+
+  // ── org-scoped: metered usage (/api/orgs/{org}/usage, scope usage:read) ──────
+  // The append-only usage_events table: what was consumed (stt/llm/tts/
+  // telephony/tool), not what it cost — the wallet is the money view.
+  usage: {
+    summary: (org) => `/api/orgs/${org}/usage/summary`,
+    events: (org) => `/api/orgs/${org}/usage/events`,
+    sessions: (org) => `/api/orgs/${org}/usage/sessions`,
+    export: (org) => `/api/orgs/${org}/usage/export`, // streams text/csv
   },
 
   // ── org-scoped: billing wallet (/api/orgs/{org}/wallet) ──────────────────────

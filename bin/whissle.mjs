@@ -12,12 +12,15 @@ import { err, out, brand, bold, dim } from "../src/ui.mjs";
 
 const GROUPS = {
   agents: () => import("../src/commands/agents.mjs"),
+  voices: () => import("../src/commands/voices.mjs"),
   chat: () => import("../src/commands/chat.mjs"),
   companion: () => import("../src/commands/companion.mjs"),
   calls: () => import("../src/commands/calls.mjs"),
   sessions: () => import("../src/commands/sessions.mjs"),
   actions: () => import("../src/commands/actions.mjs"),
   compliance: () => import("../src/commands/compliance.mjs"),
+  reports: () => import("../src/commands/reports.mjs"),
+  alerts: () => import("../src/commands/alerts.mjs"),
   kb: () => import("../src/commands/kb.mjs"),
   tools: () => import("../src/commands/tools.mjs"),
   connectors: () => import("../src/commands/connectors.mjs"),
@@ -82,6 +85,8 @@ ${bold("Configure agents")}
   whissle agents rollback <id> <version-id>   restore content; deployment untouched
   whissle agents clone <id>           duplicate as an undeployed draft
   whissle agents types                agent-type keys for --type (customer_support, …)
+  whissle voices [--language xx] [--gender g]   what an agent's voice/gender pair sounds like
+                      ${dim("(the derived catalog the call path resolves through, with pricing)")}
 
 ${bold("Conversation flow")}  ${dim("— the in-call state machine (flow-based, guard-railed agents)")}
   whissle agents flow show <id> [--draft] [--json]  live flow, or the staged draft
@@ -90,6 +95,18 @@ ${bold("Conversation flow")}  ${dim("— the in-call state machine (flow-based, 
   whissle agents flow trace <id> --conversation <cid>   turn-by-turn step trace for one run
   whissle agents flow publish <id>               promote the staged draft → live
   whissle agents flow discard <id>               throw the pending draft away
+
+${bold("Rehearse & report")}  ${dim("— test an agent before callers do; the AI reads your transcripts")}
+  whissle agents scenarios <id>                  test scenarios (persona + goal + criteria)
+  whissle agents scenarios <id> generate         AI-draft a suite from the agent's own prompt
+  whissle agents scenarios <id> add --title T --persona P --goal G --criteria C
+  whissle agents scenarios <id> delete <scenario-id>
+  whissle agents simulate <id> [--scenario <sid> …]   play scenarios against the agent's real brain
+  whissle agents simulate <id> runs              verdicts + transcripts (poll while running)
+  whissle reports [--agent <id>]                 AI-written transcript reports (list)
+  whissle reports generate [--agent <id>] [--days 30] [--question "…" …]
+  whissle reports show <report-id>               the finished markdown report
+  whissle reports corpus [--days 30] [--out f]   the raw transcript window — take it to any AI
 
 ${bold("Run an agent")}
   whissle chat <agent-id>             interactive text conversation
@@ -191,7 +208,10 @@ ${bold("Compliance")}  ${dim("(needs compliance:read/write)")}  ${dim("— Do-No
   whissle compliance suppressions
   whissle compliance suppress <+1…> [--reason r] | unsuppress <+1…>
   whissle compliance settings | settings set [--window-start 9 --window-end 20 --timezone …]
+                      [--contacts-are-customers true] [--outreach-attested true]
   whissle compliance events [--days 30]
+  whissle compliance readiness        every blocker between you and autonomous calling, with fixes
+  whissle compliance erase <+1…> --force   forget one person (GDPR/CCPA); the DNC entry stays
 
 ${bold("SMS")}  ${dim("— delivery log + consent (no send; agents send SMS)")}
   whissle sms messages [--limit N] | opt-outs | consents
@@ -200,6 +220,15 @@ ${bold("SMS")}  ${dim("— delivery log + consent (no send; agents send SMS)")}
 ${bold("Analytics")}  ${dim("(needs analytics:read)")}
   whissle analytics query [--metric count] [--group-by day] [--since D --until D] [--agent <id>]
   whissle analytics options | charts
+
+${bold("Alerts")}  ${dim("— metric thresholds watched server-side; an event (and email) when one fires")}
+  whissle alerts rules                list alert rules
+  whissle alerts rules add --name N --metric M --threshold X [--comparator above|below]
+                      [--agent <id>] [--window-hours 24] [--min-calls 0] [--cooldown-hours 24]
+  whissle alerts rules update <id> [--…] | delete <id>
+  whissle alerts rules test <id>      measure it right now — no event, no email, no cooldown
+  whissle alerts options              the valid metrics + comparators
+  whissle alerts events [--days 30]   what actually fired
 
 ${bold("Campaigns")}  ${dim("— SERVER-SIDE managed dialing (vs. `calls campaign` = client-side CSV batching)")}
   whissle campaigns list | get <id>
@@ -235,8 +264,12 @@ ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
   whissle models transcribe audio.wav [--language xx] [--diarize]
   whissle models voices               voice ids for --voice (grouped by engine)
 
-${bold("Billing")}
+${bold("Billing & usage")}
   whissle usage                       wallet balance + recent ledger
+  whissle usage summary [--days 30] [--channel voice]   totals per service + per-day breakdown
+  whissle usage events [--days 30] [--service llm] [--limit 100]   raw metering events
+  whissle usage sessions --day 2026-08-30   per-session breakdown for one day
+  whissle usage export [--days 30] [--out usage.csv]    the whole window as CSV
 
 Global: --json (machine output), --base-url <url>, --key <wsk_…>
 Per-command help: whissle <group> --help   (e.g. whissle sessions --help)

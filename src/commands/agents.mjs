@@ -277,8 +277,10 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "flow") return runFlow(args[0], args.slice(1), flags);
+  if (sub === "scenarios") return runScenarios(args[0], args.slice(1), flags);
+  if (sub === "simulate") return runSimulate(args[0], args.slice(1), flags);
 
-  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone | flow | types.`);
+  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone | flow | scenarios | simulate | types.`);
 }
 
 // ── agents flow show|set|generate|trace|publish|discard ──────────────────────
@@ -442,4 +444,99 @@ async function runFlow(verb, args, flags) {
   }
 
   fatal(`Unknown: agents flow ${verb}. Try show | set | generate | trace | publish | discard.`);
+}
+
+// ── agents scenarios <id> [generate | add | delete] + agents simulate <id> ────
+// Rehearse an agent against realistic caller scenarios (routes/simulations.py):
+// a scenario is persona + goal + success criteria; `simulate` plays them against
+// the agent's REAL assembled brain in the background and a strict LLM judge
+// records pass/fail. Runs are polled with `agents simulate <id> runs`.
+
+const cut16 = (s) => (s || "").slice(0, 16).replace("T", " ");
+
+async function runScenarios(agentId, args, flags) {
+  const id = agentId || fatal("Usage: whissle agents scenarios <agent-id> [generate | add --title … --persona … --goal … --criteria … | delete <scenario-id>]");
+  const verb = args[0];
+
+  if (!verb || verb === "list") {
+    const res = await get(EP.agents.scenarios(id));
+    if (flags.json) return printJson(res);
+    const rows = res?.scenarios || [];
+    table(
+      ["ID", "TITLE", "GOAL", "SOURCE", "CREATED"],
+      rows.map((s) => [s.id, trunc(s.title || "—", 28), trunc(s.goal || "—", 40), s.source || "—", cut16(s.created_at)]),
+    );
+    out(dim(`\n  ${rows.length} scenario(s)  ·  run them: whissle agents simulate ${id}`));
+    return;
+  }
+
+  if (verb === "generate") {
+    // The LLM writes scenarios from the agent's OWN assembled prompt, so the
+    // suite matches what the agent is actually configured to do.
+    const res = await post(EP.agents.scenariosGenerate(id), {});
+    if (flags.json) return printJson(res);
+    const rows = res?.scenarios || [];
+    ok(`Generated ${rows.length} scenario(s) for agent ${id}`);
+    table(["ID", "TITLE", "GOAL"], rows.map((s) => [s.id, trunc(s.title || "—", 28), trunc(s.goal || "—", 48)]));
+    out(dim(`\n  Run them: whissle agents simulate ${id}`));
+    return;
+  }
+
+  if (verb === "add") {
+    const spec = flags.file ? JSON.parse(readFileSync(flags.file, "utf8")) : {
+      title: flags.title, persona: flags.persona, goal: flags.goal,
+      success_criteria: flags.criteria || flags["success-criteria"],
+    };
+    if (!spec.title || !spec.persona || !spec.goal || !spec.success_criteria) {
+      fatal('scenarios add needs --title, --persona, --goal and --criteria (or --file scenario.json with those keys).');
+    }
+    const s = await post(EP.agents.scenarios(id), spec);
+    if (flags.json) return printJson(s);
+    ok(`Added scenario ${s.id} — ${s.title}`);
+    return;
+  }
+
+  if (verb === "delete") {
+    const sid = args[1] || fatal("Usage: whissle agents scenarios <agent-id> delete <scenario-id>");
+    const r = await del(EP.agents.scenario(id, sid));
+    if (flags.json) return printMutation(r, { deleted: sid });
+    ok(`Deleted scenario ${sid}`);
+    return;
+  }
+
+  fatal(`Unknown: agents scenarios ${verb}. Try list | generate | add | delete.`);
+}
+
+const runRow = (r) => [
+  r.id,
+  trunc(r.scenario_title || r.scenario_id || "—", 28),
+  r.status || "—",
+  r.turns ?? "—",
+  cut16(r.started_at),
+  trunc(r.verdict || "—", 44),
+];
+
+async function runSimulate(agentId, args, flags) {
+  const id = agentId || fatal("Usage: whissle agents simulate <agent-id> [--scenario <sid> …]   |   whissle agents simulate <agent-id> runs");
+
+  if (args[0] === "runs") {
+    const res = await get(EP.agents.simulations(id));
+    if (flags.json) return printJson(res);
+    const rows = res?.runs || [];
+    table(["RUN", "SCENARIO", "STATUS", "TURNS", "STARTED", "VERDICT"], rows.map(runRow));
+    const running = rows.filter((r) => r.status === "running").length;
+    out(dim(`\n  ${rows.length} run(s)` + (running ? `  ·  ${running} still running — re-run to poll` : "") + "  ·  transcripts in --json (.runs[].transcript)"));
+    return;
+  }
+
+  if (args[0]) fatal(`Unknown: agents simulate ${args[0]}. Use no verb to start runs, or "runs" to list them.`);
+
+  // Start runs: the named scenarios, or (default) the newest ones on the agent.
+  const ids = [].concat(flags.scenario || []).filter((s) => typeof s === "string");
+  const res = await post(EP.agents.simulationsRun(id), ids.length ? { scenario_ids: ids } : {});
+  if (flags.json) return printJson(res);
+  const rows = res?.runs || [];
+  ok(`Started ${rows.length} simulation run(s) for agent ${id}`);
+  table(["RUN", "SCENARIO", "STATUS"], rows.map((r) => [r.id, trunc(r.scenario_title || "—", 32), r.status || "running"]));
+  out(dim(`\n  They run in the background. Verdicts: whissle agents simulate ${id} runs`));
 }

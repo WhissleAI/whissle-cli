@@ -14,7 +14,8 @@ import { out, ok, table, kv, trunc, dim, printJson, printMutation, fatal } from 
 const when = (s) => (s || "").slice(0, 16).replace("T", " ");
 
 // --flag → settings field. Booleans accept an explicit true/false value or a bare flag.
-const SETTING_FLAGS = {
+// Exported for tests.
+export const SETTING_FLAGS = {
   "window-start": ["calling_window_start", "int"],
   "window-end": ["calling_window_end", "int"],
   timezone: ["default_timezone", "str"],
@@ -22,9 +23,15 @@ const SETTING_FLAGS = {
   "disclosure-required": ["disclosure_required", "bool"],
   "disclosure-text": ["disclosure_text", "str"],
   "retention-days": ["retention_days", "int"],
+  // The two one-time attestations (services/compliance_settings.py). They are
+  // what `readiness` asks for: "my contacts gave me their numbers" covers every
+  // informational call; the outreach one covers lists of people who never
+  // contacted you — you attest to a lawful basis, we keep the evidence.
+  "contacts-are-customers": ["contacts_are_customers", "bool"],
+  "outreach-attested": ["outreach_attested", "bool"],
 };
 
-function settingsBody(flags) {
+export function settingsBody(flags) {
   const body = {};
   for (const [flag, [field, type]] of Object.entries(SETTING_FLAGS)) {
     const v = flags[flag];
@@ -111,5 +118,43 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: compliance ${sub}. Try suppressions | suppress | unsuppress | settings | settings set | events.`);
+  if (sub === "readiness") {
+    // "Am I allowed to turn autonomous calling on yet?" — every blocker named,
+    // with the fix for each. Informational checks are listed but never block.
+    const r = await get(EP.compliance.readiness(org));
+    if (flags.json) return printJson(r);
+    out(r.ready ? "  READY — nothing blocks autonomous calling." : `  NOT READY — ${r.blockers} blocker(s).`);
+    out("");
+    table(
+      ["OK", "CHECK", "DETAIL"],
+      (r.checks || []).map((c) => [
+        c.ok ? "✓" : c.required ? "✗" : "·",
+        trunc(c.label || c.key, 44),
+        trunc(c.detail || "—", 60),
+      ]),
+    );
+    if (!r.ready && r.next_step) {
+      out(dim(`\n  next: ${r.next_step.label}` + (r.next_step.fix_label ? `  →  ${r.next_step.fix_label} (${r.next_step.fix_url})` : "")));
+    }
+    return;
+  }
+
+  if (sub === "erase") {
+    // GDPR/CCPA right to be forgotten: deletes everything held about one person
+    // (calls + recordings, SMS, scheduled calls, consents, the contact) and
+    // KEEPS two things — the do-not-call entry and the erasure event — so the
+    // request can never cause the very call it was meant to prevent.
+    const phone = args[0] || fatal("Usage: whissle compliance erase <+1…> --force   (delete everything held about this person; irreversible)");
+    if (!flags.force) {
+      fatal(`This permanently deletes every record for ${phone} (calls, recordings, SMS, contact) and cannot be undone.\n  Re-run with --force to proceed. The number stays on the Do-Not-Call list.`);
+    }
+    const r = await post(EP.compliance.erase(org), { phone_number: phone });
+    if (flags.json) return printJson(r);
+    ok(`Erased ${r.phone_number || phone}`);
+    kv(r.deleted || {});
+    out(dim("  Kept on purpose: the Do-Not-Call entry and the erasure event itself."));
+    return;
+  }
+
+  fatal(`Unknown: compliance ${sub}. Try suppressions | suppress | unsuppress | settings | settings set | events | readiness | erase.`);
 }

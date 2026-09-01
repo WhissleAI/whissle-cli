@@ -123,9 +123,13 @@ export async function postStream(path, body, { cfg = loadConfig(), signal } = {}
   return sseFrames(res.body);
 }
 
-/** Raw response (for binary bodies like TTS audio). Returns the Response. */
-export async function raw(method, path, { body, cfg = loadConfig() } = {}) {
-  const res = await fetch(cfg.baseUrl + path, {
+/** Raw response (for binary/text bodies like TTS audio or a CSV stream). Returns the Response. */
+export async function raw(method, path, { query, body, cfg = loadConfig() } = {}) {
+  const url = new URL(cfg.baseUrl + path);
+  for (const [k, v] of Object.entries(query || {})) {
+    if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url, {
     method,
     headers: { ...authHeader(cfg), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
