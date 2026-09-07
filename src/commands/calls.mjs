@@ -460,5 +460,24 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: calls ${sub}. Try start | campaign | list | get | result | transcript | audio | export.`);
+  if (sub === "transfers") {
+    // Warm-transfer audit log: who got handed to a human, when, and the outcome.
+    const res = await get(EP.calls.transfers);
+    if (flags.json) return printJson(res);
+    const rows = res?.transfers || (Array.isArray(res) ? res : []);
+    table(
+      ["WHEN", "CALL", "TO", "STATUS", "MERGED"],
+      rows.map((t) => [
+        (t.created_at || "").slice(0, 16).replace("T", " "),
+        trunc(t.call_id || t.call_sid || "—", 14),
+        trunc(t.to || t.destination || "—", 20),
+        t.status || "—",
+        t.merged_at ? "yes" : "no",
+      ]),
+    );
+    out(dim(`\n  ${rows.length} transfer(s)`));
+    return;
+  }
+
+  fatal(`Unknown: calls ${sub}. Try start | campaign | list | get | result | transcript | audio | export | transfers.`);
 }

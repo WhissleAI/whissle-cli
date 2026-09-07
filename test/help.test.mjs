@@ -12,6 +12,7 @@ const GROUPS = [
   "agents", "voices", "chat", "companion", "calls", "sessions", "actions", "compliance",
   "reports", "alerts", "kb", "tools",
   "connectors", "numbers", "integrations", "embed", "models", "keys", "team",
+  "sso", "audit",
   "customers", "appointments", "sms", "analytics", "campaigns", "meetings",
   "memory", "usage", "config",
 ];
