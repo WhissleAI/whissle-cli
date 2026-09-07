@@ -30,6 +30,8 @@ const GROUPS = {
   models: () => import("../src/commands/models.mjs"),
   keys: () => import("../src/commands/keys.mjs"),
   team: () => import("../src/commands/team.mjs"),
+  sso: () => import("../src/commands/sso.mjs"),
+  audit: () => import("../src/commands/audit.mjs"),
   customers: () => import("../src/commands/customers.mjs"),
   appointments: () => import("../src/commands/appointments.mjs"),
   sms: () => import("../src/commands/sms.mjs"),
@@ -100,9 +102,14 @@ ${bold("Rehearse & report")}  ${dim("— test an agent before callers do; the AI
   whissle agents scenarios <id>                  test scenarios (persona + goal + criteria)
   whissle agents scenarios <id> generate         AI-draft a suite from the agent's own prompt
   whissle agents scenarios <id> add --title T --persona P --goal G --criteria C
+  whissle agents scenarios <id> update <sid> [--gate true …]   edit a scenario (assertions, gate)
   whissle agents scenarios <id> delete <scenario-id>
-  whissle agents simulate <id> [--scenario <sid> …]   play scenarios against the agent's real brain
+  whissle agents scenarios <id> stats <sid>      pass-rate + flakiness over recent runs
+  whissle agents scenarios <id> templates [<key>]   list / apply a starter pack
+  whissle agents simulate <id> [--scenario <sid> …] [--env candidate|staging|draft|production] [--repeat N]
   whissle agents simulate <id> runs              verdicts + transcripts (poll while running)
+  whissle agents testbed <id> --message "…" [--env …] [--compare]   replay one caller line
+  whissle agents releases <id> [status|stage|promote|unstage|events]   draft → staging → production
   whissle reports [--agent <id>]                 AI-written transcript reports (list)
   whissle reports generate [--agent <id>] [--days 30] [--question "…" …]
   whissle reports show <report-id>               the finished markdown report
@@ -138,6 +145,7 @@ ${bold("Records & evaluation")}  ${dim("(needs calls:read)")}
                       (disposition + structured result; --wait polls until finalized)
   whissle calls transcript <id>
   whissle calls audio <id>            recording URL (pre-signed on cloud storage)
+  whissle calls transfers             warm-transfer log (who was handed to a human)
   whissle calls export [--agent <id>] [--since 2026-07-01] [--format jsonl|csv] [--out f]
 
 ${bold("Sessions")}  ${dim("(needs calls:read)")}  ${dim("— voice calls AND text threads, one history")}
@@ -188,6 +196,11 @@ ${bold("Onboarding")}  ${dim("— stand up a workspace: keys, teammates, contact
   whissle team list
   whissle team invite --email person@co.com [--role owner|admin|member]
   whissle team revoke <invitation-id>
+  whissle sso list                    enterprise SSO connections (per-org OIDC)
+  whissle sso create --name N --issuer … --client-id … --client-secret … --domains a.com,b.com
+  whissle sso update <id> [--enabled true …] | whissle sso delete <id>
+  whissle audit list [--type … --before … --limit …]   security audit log
+  whissle audit event-types           the audit event vocabulary
   whissle customers list [--limit N] [--agent <id>]
   whissle customers create --name N --phone <+1…> --agent <agent-id> [--email e]
   whissle customers import --file contacts.csv --agent <agent-id> [--on-duplicate skip|update]

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { get, post, patch, del, upload } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, err, ok, table, kv, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
+import { out, err, ok, table, kv, trunc, dim, bold, printJson, printMutation, fatal } from "../ui.mjs";
 import { exitCodeFor } from "../exit.mjs";
 
 // Fields that go in the create body vs. a follow-up PATCH (audio/config are
@@ -279,8 +279,10 @@ export async function run(sub, args, flags) {
   if (sub === "flow") return runFlow(args[0], args.slice(1), flags);
   if (sub === "scenarios") return runScenarios(args[0], args.slice(1), flags);
   if (sub === "simulate") return runSimulate(args[0], args.slice(1), flags);
+  if (sub === "testbed") return runTestbed(args[0], args.slice(1), flags);
+  if (sub === "releases") return runReleases(args[0], args.slice(1), flags);
 
-  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone | flow | scenarios | simulate | types.`);
+  fatal(`Unknown: agents ${sub}. Try list | get | create | update | delete | versions | rollback | clone | flow | scenarios | simulate | testbed | releases | types.`);
 }
 
 // ── agents flow show|set|generate|trace|publish|discard ──────────────────────
@@ -496,6 +498,20 @@ async function runScenarios(agentId, args, flags) {
     return;
   }
 
+  if (verb === "update") {
+    const sid = args[1] || fatal("Usage: whissle agents scenarios <agent-id> update <scenario-id> [--file s.json | --title … --gate true …]");
+    const patchBody = flags.file ? JSON.parse(readFileSync(flags.file, "utf8")) : {};
+    for (const [k, dst] of [["title", "title"], ["persona", "persona"], ["goal", "goal"], ["criteria", "success_criteria"]]) {
+      if (flags[k] !== undefined) patchBody[dst] = flags[k];
+    }
+    if (flags.gate !== undefined) patchBody.required_for_promotion = flags.gate === true || flags.gate === "true";
+    if (!Object.keys(patchBody).length) fatal("Nothing to update — pass --file or one of --title/--persona/--goal/--criteria/--gate.");
+    const s = await patch(EP.agents.scenario(id, sid), patchBody);
+    if (flags.json) return printJson(s);
+    ok(`Updated scenario ${sid}`);
+    return;
+  }
+
   if (verb === "delete") {
     const sid = args[1] || fatal("Usage: whissle agents scenarios <agent-id> delete <scenario-id>");
     const r = await del(EP.agents.scenario(id, sid));
@@ -504,7 +520,31 @@ async function runScenarios(agentId, args, flags) {
     return;
   }
 
-  fatal(`Unknown: agents scenarios ${verb}. Try list | generate | add | delete.`);
+  if (verb === "stats") {
+    const sid = args[1] || fatal("Usage: whissle agents scenarios <agent-id> stats <scenario-id>");
+    const s = await get(EP.agents.scenarioStats(id, sid));
+    if (flags.json) return printJson(s);
+    const pr = s.pass_rate == null ? "—" : `${Math.round(s.pass_rate * 100)}%`;
+    out(`  pass rate ${bold(pr)}  ·  flakiness ${bold(`${Math.round((s.flakiness || 0) * 100)}%`)}  ·  ${s.passed}✓ ${s.failed}✗ ${s.error} err over ${s.total} run(s)`);
+    return;
+  }
+
+  if (verb === "templates") {
+    const pack = args[1];
+    if (!pack) {
+      const res = await get(EP.agents.scenariosTemplates(id));
+      if (flags.json) return printJson(res);
+      table(["KEY", "TITLE", "SCENARIOS", "DESCRIPTION"], (res?.templates || []).map((t) => [t.key, t.title, t.count, trunc(t.description || "—", 44)]));
+      out(dim(`\n  Apply one: whissle agents scenarios ${id} templates <key>`));
+      return;
+    }
+    const res = await post(EP.agents.scenariosTemplateApply(id, pack), {});
+    if (flags.json) return printJson(res);
+    ok(`Applied template '${pack}' — added ${(res?.scenarios || []).length} scenario(s)`);
+    return;
+  }
+
+  fatal(`Unknown: agents scenarios ${verb}. Try list | generate | add | update | delete | stats | templates.`);
 }
 
 const runRow = (r) => [
@@ -532,11 +572,80 @@ async function runSimulate(agentId, args, flags) {
   if (args[0]) fatal(`Unknown: agents simulate ${args[0]}. Use no verb to start runs, or "runs" to list them.`);
 
   // Start runs: the named scenarios, or (default) the newest ones on the agent.
+  // --env picks the config (candidate|staging|draft|production); --repeat N (1-5)
+  // runs each scenario N times to measure flakiness.
   const ids = [].concat(flags.scenario || []).filter((s) => typeof s === "string");
-  const res = await post(EP.agents.simulationsRun(id), ids.length ? { scenario_ids: ids } : {});
+  const body = ids.length ? { scenario_ids: ids } : {};
+  if (flags.env) body.env = flags.env;
+  if (flags.repeat) body.repeat = Number(flags.repeat) || 1;
+  const res = await post(EP.agents.simulationsRun(id), body);
   if (flags.json) return printJson(res);
   const rows = res?.runs || [];
   ok(`Started ${rows.length} simulation run(s) for agent ${id}`);
   table(["RUN", "SCENARIO", "STATUS"], rows.map((r) => [r.id, trunc(r.scenario_title || "—", 32), r.status || "running"]));
   out(dim(`\n  They run in the background. Verdicts: whissle agents simulate ${id} runs`));
+}
+
+
+// ── agents testbed <id> — replay one caller line against a config ─────────────
+// POST /testbed/replay: the agent's next reply under a chosen env, optionally
+// beside the production reply (--compare) — "how would my staged change answer?".
+async function runTestbed(agentId, args, flags) {
+  const id = agentId || fatal('Usage: whissle agents testbed <agent-id> --message "…" [--env candidate|staging|draft|production] [--compare]');
+  const message = flags.message || flags.m || args.join(" ").trim();
+  if (!message) fatal('Give a caller message: whissle agents testbed <agent-id> --message "do you take walk-ins?"');
+  const body = { messages: [{ role: "caller", content: message }] };
+  if (flags.env) body.env = flags.env;
+  if (flags.compare) body.compare = true;
+  const res = await post(EP.agents.testbedReplay(id), body);
+  if (flags.json) return printJson(res);
+  const show = (r) => r && out(`\n  ${bold(`[${r.env}${r.version_id ? " · staged" : ""}]`)}\n  ${r.reply || dim("(no reply produced)")}`);
+  show(res.primary);
+  show(res.baseline);
+}
+
+// ── agents releases <id> [status|stage|promote|unstage|events] ────────────────
+// The draft → staging → production lifecycle (routes/agent_releases.py). Distinct
+// from `agents publish` (the workflow-draft lifecycle).
+async function runReleases(agentId, args, flags) {
+  const id = agentId || fatal("Usage: whissle agents releases <agent-id> [status | stage | promote [--force --reason \"…\"] | unstage | events]");
+  const verb = args[0] || "status";
+
+  if (verb === "status") {
+    const s = await get(EP.agents.releases(id));
+    if (flags.json) return printJson(s);
+    const gates = s.gates || {};
+    out(`  staging ${bold(s.staging ? "set" : "empty")}  ·  promotable ${bold(s.promotable ? "yes" : "no")}` +
+      (gates.blockers?.length ? `  ·  ${gates.blockers.length} gate blocker(s)` : gates.required?.length ? `  ·  gates passing` : ""));
+    for (const b of gates.blockers || []) out(dim(`    ✗ ${b.title || b.scenario_id}: ${b.why || "not passed"}`));
+    return;
+  }
+  if (verb === "stage") {
+    const s = await post(EP.agents.releaseStage(id), flags.label ? { label: flags.label } : {});
+    if (flags.json) return printJson(s);
+    ok(`Staged version ${s.version?.id || ""}` + (s.auto_runs ? ` — ${s.auto_runs} gate check(s) started` : ""));
+    return;
+  }
+  if (verb === "promote") {
+    const body = {};
+    if (flags.force) { body.force = true; body.reason = flags.reason || ""; }
+    const s = await post(EP.agents.releasePromote(id), body);
+    if (flags.json) return printJson(s);
+    ok(`Promoted to production${s.forced ? " (forced)" : ""}`);
+    return;
+  }
+  if (verb === "unstage") {
+    const s = await post(EP.agents.releaseUnstage(id), {});
+    if (flags.json) return printJson(s);
+    ok("Cleared staging (production untouched)");
+    return;
+  }
+  if (verb === "events") {
+    const res = await get(EP.agents.releaseEvents(id));
+    if (flags.json) return printJson(res);
+    const rows = res?.events || res || [];
+    table(["WHEN", "EVENT", "VERSION", "ACTOR"], (Array.isArray(rows) ? rows : []).map((e) => [cut16(e.created_at), e.event || "—", trunc(e.version_id || "—", 12), trunc(e.actor_user_id || "—", 12)]));
+    return;
+  }
+  fatal(`Unknown: agents releases ${verb}. Try status | stage | promote | unstage | events.`);
 }

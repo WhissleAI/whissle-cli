@@ -63,8 +63,24 @@ export const EP = {
     scenarios: (id) => `/api/agents/${id}/scenarios`,
     scenario: (id, sid) => `/api/agents/${id}/scenarios/${sid}`,
     scenariosGenerate: (id) => `/api/agents/${id}/scenarios/generate`,
+    // Flakiness stats for one scenario, the starter-pack library, and applying
+    // a pack. (mig 184: scenarios carry deterministic `assertions`.)
+    scenarioStats: (id, sid) => `/api/agents/${id}/scenarios/${sid}/stats`,
+    scenariosTemplates: (id) => `/api/agents/${id}/scenarios/templates`,
+    scenariosTemplateApply: (id, pack) => `/api/agents/${id}/scenarios/templates/${pack}/apply`,
     simulations: (id) => `/api/agents/${id}/simulations`,
     simulationsRun: (id) => `/api/agents/${id}/simulations/run`,
+    // Testbed: replay a conversation against a chosen env; `compare` also runs
+    // production so a staged reply sits beside what's live.
+    testbedReplay: (id) => `/api/agents/${id}/testbed/replay`,
+    // Releases (routes/agent_releases.py): draft → staging → production with
+    // promotion gates. This is the ENV lifecycle, distinct from the workflow
+    // draft lifecycle above (publish/discardDraft).
+    releases: (id) => `/api/agents/${id}/releases`,
+    releaseStage: (id) => `/api/agents/${id}/releases/stage`,
+    releasePromote: (id) => `/api/agents/${id}/releases/promote`,
+    releaseUnstage: (id) => `/api/agents/${id}/releases/unstage`,
+    releaseEvents: (id) => `/api/agents/${id}/releases/events`,
   },
 
   // ── the COMPANION: the caller's own assistant, not an org agent ─────────────
@@ -155,6 +171,8 @@ export const EP = {
     // session and returns this payload verbatim; kept as its own path because a
     // call id is a legitimate thing to trace directly.
     trace: (id) => `/api/calls/${id}/trace`,
+    // Warm-transfer audit log — who was transferred to a human, when, outcome.
+    transfers: "/api/calls/transfers",
   },
 
   // ── sessions: the UNION of calls and text threads ───────────────────────────
@@ -332,6 +350,23 @@ export const EP = {
     list: (org) => `/api/orgs/${org}/invitations`,
     create: (org) => `/api/orgs/${org}/invitations`,
     del: (org, id) => `/api/orgs/${org}/invitations/${id}`,
+  },
+
+  // ── org-scoped: enterprise SSO (routes/sso.py) ──────────────────────────────
+  // Per-org OIDC connections. The client secret is never returned. The public
+  // sign-in surface (/api/auth/sso/*) is browser-driven and not modeled here.
+  sso: {
+    list: (org) => `/api/orgs/${org}/sso`,
+    create: (org) => `/api/orgs/${org}/sso`,
+    update: (org, id) => `/api/orgs/${org}/sso/${id}`,
+    del: (org, id) => `/api/orgs/${org}/sso/${id}`,
+  },
+
+  // ── org-scoped: security audit log (routes/audit_log.py) ────────────────────
+  // Read-only, redacted, cursor-paged (pass `before`). Owner/admin only.
+  audit: {
+    list: (org) => `/api/orgs/${org}/audit`,
+    eventTypes: (org) => `/api/orgs/${org}/audit/event-types`,
   },
 
   // ── org-scoped: custom HTTP/data tools (/api/orgs/{org}/tools) ───────────────
