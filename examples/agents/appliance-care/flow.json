@@ -70,7 +70,7 @@
         "get_customer_by_phone",
         "get_customer_by_name"
       ],
-      "goal": "Identify the customer with get_customer_by_phone, or get_customer_by_name if they have no phone on file. This returns a customer id. A customer id is NOT an appliance id \u2014 do not use it as one."
+      "goal": "Identify the customer before discussing a procedure. If the conversation does not yet contain a phone number or full name, your next response must ask for one and you must remain in this state. Once the customer provides it, call get_customer_by_phone, or get_customer_by_name if they have no phone on file. Do not search the knowledge base or give troubleshooting instructions while identity is unresolved. A lookup returns a customer id. A customer id is NOT an appliance id \u2014 do not use it as one."
     },
     {
       "id": "resolve_appliance",
@@ -81,7 +81,7 @@
         "identify_model",
         "get_appliance_details"
       ],
-      "goal": "Resolve the customer's appliance to its INTERNAL APPLIANCE RECORD ID. Call list_owned_appliances with the customer id; each entry carries the internal appliance_id together with its model number and serial number. Choose the entry that matches what the customer described and use ITS appliance_id from then on. If the customer only gives a brand, a partial model, or a serial number, call identify_model to resolve it first, then match that against the list. NEVER pass a model number, a model name, a serial number, or a customer id into a tool whose argument is appliance_id \u2014 those are different identifiers and the tool will fail or act on the wrong appliance. Confirm with get_appliance_details before continuing. A code the customer quoted may CORROBORATE the record you resolved, or contradict it \u2014 if it contradicts, ask rather than assume. It can never substitute for list_owned_appliances. Customers misread digits, read the label of a different machine, and quote codes found online."
+      "goal": "Resolve the customer's appliance to its INTERNAL APPLIANCE RECORD ID. Your first action in this state must be list_owned_appliances. Copy the exact customer_id from the successful customer lookup result \u2014 it looks like CUST-001. Never substitute the customer's name, phone number, or email address. Each returned appliance entry carries the internal appliance_id together with its model number and serial number. Choose the entry that matches what the customer described and use ITS appliance_id from then on. If the customer only gives a brand, a partial model, or a serial number, call identify_model to resolve it, then match that against the owned-appliance list. NEVER pass a model number, a model name, a serial number, or a customer id into a tool whose argument is appliance_id \u2014 those are different identifiers and the tool will fail or act on the wrong appliance. Confirm with get_appliance_details before continuing. Do not search the knowledge base or provide physical instructions until list_owned_appliances succeeds. A code the customer quoted may CORROBORATE the record you resolved, or contradict it \u2014 if it contradicts, ask rather than assume. It can never substitute for list_owned_appliances. Customers misread digits, read the label of a different machine, and quote codes found online."
     },
     {
       "id": "disambiguate_model",
@@ -236,7 +236,7 @@
       "to": "unidentified_transfer",
       "kind": "llm_condition",
       "priority": 20,
-      "condition": "The customer cannot be found and cannot be identified another way."
+      "condition": "A get_customer_by_phone or get_customer_by_name call actually returned no customer, and either a second identifier also failed or the customer explicitly cannot provide another identifier. Merely not having asked for identity yet does not satisfy this condition."
     },
     {
       "id": "unidentified_to_close",
