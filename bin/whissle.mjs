@@ -119,6 +119,7 @@ ${bold("Run an agent")}
   whissle chat <agent-id>             interactive text conversation
   whissle chat <agent-id> -m "hi"     one-shot (scriptable)
   whissle chat <agent-id> -m "and?" --conversation <cid>   continue a thread
+  whissle chat <agent-id> -m "hi" --context "live: viewers=1200"   inject per-turn grounding (or --context-file <path>)
                       ${dim("(every turn echoes its --conversation id; --tools shows the")}
                       ${dim(" per-tool timeline, --verbose quotes the KB passages cited)")}
   ${dim("(browser voice embed → the @whissle/agents JS SDK + a publishable wpk_ key)")}
