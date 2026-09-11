@@ -21,6 +21,7 @@
 // Both are optional on the server; an older gateway ignores them and behaves
 // exactly as it did before.
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { get, post } from "../api.mjs";
 import { loadConfig } from "../config.mjs";
@@ -48,9 +49,16 @@ export function newSessionId() {
  * per-key catch-all thread, which is the one outcome `session_id` exists to
  * prevent. Sending both costs nothing and is correct on every branch.
  */
-export function turnBody({ message, conversationId, sessionId }) {
+export function turnBody({ message, conversationId, sessionId, context }) {
   return {
     message,
+    // Ephemeral per-turn grounding — composed UNDER the agent's own prompt + KB
+    // on the server (routes/agents.py `ChatTurnBody.context`), never stored and
+    // never a persona override. This is what lets a live driver (a streamer
+    // copilot's rolling stream state, a dashboard snapshot) ground one reply
+    // without polluting the thread. Omitted when empty, so an older gateway that
+    // does not model the field behaves exactly as before.
+    ...(context ? { context } : {}),
     ...(conversationId ? { conversation_id: conversationId } : {}),
     ...(sessionId ? { session_id: sessionId } : {}),
     source: "cli",
@@ -104,6 +112,19 @@ export async function run(sub, args, flags) {
     (typeof flags.c === "string" && flags.c) ||
     null;
 
+  // `--context <text>` / `--context-file <path>` inject ephemeral per-turn
+  // grounding (see turnBody). The file form wins when both are given, and reads
+  // synchronously up front so a bad path fails loudly before the first turn
+  // rather than mid-conversation.
+  let turnContext = (typeof flags.context === "string" && flags.context) || null;
+  if (typeof flags["context-file"] === "string" && flags["context-file"]) {
+    try {
+      turnContext = readFileSync(flags["context-file"], "utf8");
+    } catch (e) {
+      fatal(`--context-file: cannot read ${flags["context-file"]} (${e.message})`);
+    }
+  }
+
   // One-shot mode: `whissle chat <id> -m "message"` (scriptable).
   if (flags.m || flags.message) {
     const stop = spinner("thinking…");
@@ -113,7 +134,7 @@ export async function run(sub, args, flags) {
       // conversation_id and the session key is ignored; a `--conversation` the
       // server declines to adopt falls back to it rather than to the per-key
       // catch-all thread.
-      turnBody({ message: flags.m || flags.message, conversationId, sessionId }),
+      turnBody({ message: flags.m || flags.message, conversationId, sessionId, context: turnContext }),
     );
     stop();
     if (flags.json) return out(JSON.stringify(r, null, 2));
@@ -164,7 +185,7 @@ export async function run(sub, args, flags) {
     try {
       const r = await post(
         EP.agents.chatTurn(agentId),
-        turnBody({ message: text, conversationId, sessionId }),
+        turnBody({ message: text, conversationId, sessionId, context: turnContext }),
       );
       stop();
       conversationId = r.conversation_id || conversationId;

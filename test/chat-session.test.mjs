@@ -36,6 +36,17 @@ test("the body carries nothing else", () => {
   );
 });
 
+test("a --context payload rides the turn as `context`", () => {
+  const b = turnBody({ message: "hi", sessionId: "s1", context: "viewers=1200; song=Foo" });
+  assert.equal(b.context, "viewers=1200; song=Foo");
+});
+
+test("no context field when none is supplied", () => {
+  assert.equal("context" in turnBody({ message: "hi", sessionId: "s1" }), false);
+  // empty / falsy context is omitted, not sent as ""
+  assert.equal("context" in turnBody({ message: "hi", context: "" }), false);
+});
+
 test("it points at the agent's Sessions tab", () => {
   assert.equal(
     sessionsUrl("https://whissle.ai", "abc"),
@@ -109,7 +120,7 @@ test("the one-shot path sends the session key even when resuming", async () => {
   // declaration's bare `message,`) pass the same handles through, unconditionally.
   const callSites = src.match(/turnBody\(\{ message: [^}]*\}\)/g) || [];
   assert.equal(callSites.length, 2, `expected 2 turnBody call sites, saw ${callSites.length}`);
-  for (const site of callSites) assert.match(site, /conversationId,\s*sessionId\s*\}/);
+  for (const site of callSites) assert.match(site, /conversationId,\s*sessionId(?:,|\s*\})/);
 });
 
 test("the session key is short enough for the column that stores it", () => {
