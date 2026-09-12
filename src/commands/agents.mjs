@@ -150,7 +150,50 @@ export async function createFromSpec(spec, baseDir, flags) {
     const count = await ingestKnowledge(agent.id, kn, baseDir, quiet);
     if (!quiet) out(dim(`    · ingested ${count} knowledge document(s)`));
   }
+
+  // Web embed, when the package declares it. Embed config lives on its own
+  // endpoint (POST /api/agents/{id}/embed), NOT the agent record — the same door
+  // `whissle embed enable` uses — so it is a separate step here, applied last.
+  // Shape in the file: `"embed": { "allowed_origins": ["https://site.com"], "text": true }`
+  // (an `embed` block means "enable" unless `"enabled": false`). Building the
+  // agent via CLI now carries embedding in one shot instead of a second command.
+  if (spec.embed) {
+    const cfg = applyEmbed(spec.embed);
+    if (cfg.error) {
+      err(dim(`    ! embed skipped: ${cfg.error}`));
+    } else {
+      await patch(EP.agents.embed(agent.id), cfg.body);
+      if (!quiet)
+        out(dim(`    · embedding ${cfg.body.embed_enabled ? "enabled for " + cfg.origins.join(", ") : "disabled"}`));
+    }
+  }
   return agent;
+}
+
+/**
+ * Map an agent file's `embed` block to the /api/agents/{id}/embed PATCH body, or
+ * an `{error}` when it can't be enabled. An `embed` block means "enable" unless
+ * `enabled` is explicitly false; enabling REQUIRES at least one allowed origin
+ * (the same rule `whissle embed enable` enforces). Exported for tests.
+ */
+export function applyEmbed(embed) {
+  const enabled = embed.enabled !== false;
+  const origins = []
+    .concat(embed.allowed_origins || embed.origins || [])
+    .flatMap((o) => String(o).split(","))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (enabled && !origins.length) {
+    return { error: "`embed.allowed_origins` is required to enable embedding" };
+  }
+  return {
+    origins,
+    body: {
+      embed_enabled: enabled,
+      ...(origins.length ? { allowed_origins: origins } : {}),
+      ...(embed.text ? { text_enabled: true } : {}),
+    },
+  };
 }
 
 export async function run(sub, args, flags) {
