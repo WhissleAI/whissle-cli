@@ -98,12 +98,13 @@ function show(cfg) {
     out("\n  " + dim("Paste this on your site:"));
     out("  " + cfg.snippet);
   }
-  // The JS SDK is not on npm yet, so DON'T print `npm i @whissle/agents` — a flat
-  // instruction that 404s is worse than no instruction. Point at the repo, which
-  // is installable today, and say plainly that the npm name is coming.
+  // Wire-your-own-UI path. `@whissle/agents` IS published now, so point at the
+  // real install command (it used to say "publishing shortly", which stopped
+  // being true and sent integrators looking for a package they already had).
   out("\n  " + dim("Or wire it into your own UI with the browser SDK + a publishable (wpk_) key:"));
+  out(dim("    npm i @whissle/agents"));
   out(dim("    WhissleAgents.mount('#el', { apiKey: 'wpk_…', agentId: '<id>' })"));
-  out(dim("    SDK: github.com/WhissleAI/agents_js_sdk  (npm: @whissle/agents, publishing shortly)"));
+  out(dim("    docs: github.com/WhissleAI/agents_js_sdk  ·  npm: @whissle/agents"));
 }
 
 export async function run(sub, args, flags) {
