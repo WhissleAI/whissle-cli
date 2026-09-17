@@ -14,6 +14,9 @@ const GROUPS = {
   agents: () => import("../src/commands/agents.mjs"),
   voices: () => import("../src/commands/voices.mjs"),
   chat: () => import("../src/commands/chat.mjs"),
+  listen: () => import("../src/commands/listen.mjs"),
+  vision: () => import("../src/commands/vision.mjs"),
+  webhooks: () => import("../src/commands/webhooks.mjs"),
   companion: () => import("../src/commands/companion.mjs"),
   calls: () => import("../src/commands/calls.mjs"),
   sessions: () => import("../src/commands/sessions.mjs"),
@@ -122,7 +125,18 @@ ${bold("Run an agent")}
   whissle chat <agent-id> -m "hi" --context "live: viewers=1200"   inject per-turn grounding (or --context-file <path>)
                       ${dim("(every turn echoes its --conversation id; --tools shows the")}
                       ${dim(" per-tool timeline, --verbose quotes the KB passages cited)")}
+  whissle chat turn <agent-id> -m "…" [--stream] [--schema s.json] [--cite] [--cost-center cc]
+                      [--facts k=v …] [--facts-file f.json] [--model-tier fast|default|complex]
+                      [--on-behalf-of who] [--image shot.png …]   one contract turn, scriptable
+                      ${dim("(--stream narrates deltas + tools; --schema → structured JSON or a")}
+                      ${dim(" schema_error; --cite → claims with chunk/doc/version; 413 says the limit)")}
   ${dim("(browser voice embed → the @whissle/agents JS SDK + a publishable wpk_ key)")}
+
+${bold("Listen & see")}  ${dim("(needs sessions:write)")}  ${dim("— the agent's ear with no mouth, and its eyes")}
+  whissle listen start <agent-id> [--language en] [--metadata]   open a listen room → {url, token, room, session_id}
+  whissle listen tail <session-id> [--interval 2] [--once]   follow its transcript + signals (emotion, wpm, entities)
+  whissle vision ask <agent-id> <image> "what is this?" [--hint …] [--max-words 40]
+  whissle vision batch <agent-id> --file items.json [--concurrency 2]   ≤ 40 {id, image, question} items
 
 ${bold("Your companion")}  ${dim("(needs companion:invoke)")}  ${dim("— YOUR assistant, not an org agent")}
   whissle companion                   interactive; streams the turn as it happens
@@ -164,6 +178,13 @@ ${bold("Knowledge & tools")}
   whissle kb add <agent-id> [--text … | --file f.pdf | --url https://…]
   whissle kb update <agent-id> <doc-id> [--title …] [--text …]   re-sync in place (reindexes)
   whissle kb remove <agent-id> <doc-id> --force
+  whissle kb sync <agent-id> <dir> [--namespace ns] [--prune] [--dry-run] [--ext md,txt,html,json,csv]
+                      ${dim("(versioned docs keyed by path; same content_hash = unchanged, no re-embed)")}
+  whissle kb docs <agent-id> [--namespace ns]      the versioned documents (doc_version, chunks)
+  whissle kb search <agent-id> "question" [--k 5] [--namespace ns]   retrieval as the agent sees it
+  whissle kb eval <agent-id> labels.json [--k 5]   recall@1/3/5 + MRR over labelled questions
+  whissle kb import-conversations <agent-id> <export-file>   drop a chat export on the ingest door
+  whissle kb import-status <agent-id> [<job-id>]   poll a background import
   whissle kb me list [--limit N] [--offset N]     ${dim("YOUR documents — no agent reads these")}
   whissle kb me add <file> [--session <chat-session-id>]   drop a file on your assistant
   whissle kb me get <doc-id> [--out f]            the original bytes back
@@ -214,7 +235,9 @@ ${bold("Appointments")}  ${dim("— per-agent booking config (--agent optional)"
 
 ${bold("Action inbox")}  ${dim("(needs actions:read/write)")}  ${dim("— approve/reject held post-call actions")}
   whissle actions list [--status pending|all] [--agent <id>]
-  whissle actions approve <id> | reject <id> [--reason r]
+  whissle actions approve <id> | reject <id> [--reason r]   [--idempotency-key k]  a repeat returns the first result
+  whissle actions bulk-approve (--ids a,b,c | --all-pending [--agent <id>]) [--yes]
+  whissle actions undo <id>           run the tool's compensate step (409 when it has none)
   whissle actions scheduled           upcoming auto follow-up calls
   whissle actions cancel-scheduled <id>
 
@@ -227,7 +250,8 @@ ${bold("Compliance")}  ${dim("(needs compliance:read/write)")}  ${dim("— Do-No
   whissle compliance readiness        every blocker between you and autonomous calling, with fixes
   whissle compliance erase <+1…> --force   forget one person (GDPR/CCPA); the DNC entry stays
 
-${bold("SMS")}  ${dim("— delivery log + consent (no send; agents send SMS)")}
+${bold("SMS")}  ${dim("— send one message; the delivery log + consent trail")}
+  whissle sms send --to <+1…> --body "…" [--from <+1…>] [--agent <id>]   sends a real text (billed)
   whissle sms messages [--limit N] | opt-outs | consents
   whissle sms opt-in <+1…>            re-enable a suppressed number
 
@@ -241,8 +265,16 @@ ${bold("Alerts")}  ${dim("— metric thresholds watched server-side; an event (a
                       [--agent <id>] [--window-hours 24] [--min-calls 0] [--cooldown-hours 24]
   whissle alerts rules update <id> [--…] | delete <id>
   whissle alerts rules test <id>      measure it right now — no event, no email, no cooldown
+  whissle alerts create --kind balance_below_usd --threshold 20 [--webhook <id>]   fires balance.threshold
+  whissle alerts create --kind p95_ms_over --door chat_turn --threshold 1500       fires latency.threshold
   whissle alerts options              the valid metrics + comparators
   whissle alerts events [--days 30]   what actually fired
+
+${bold("Webhooks")}  ${dim("— your endpoint, called on session.ended · tool.held · approval.decided · kb.ingested · balance/latency.threshold")}
+  whissle webhooks create --url https://… --events session.ended,tool.held [--secret s]   (secret shown once)
+  whissle webhooks list | delete <id> --force | test <id>
+  whissle webhooks deliveries <id> [--limit N]   attempts, dead-letters   |   replay <id> <delivery-id>
+  whissle webhooks events             the event kinds + the signature scheme (offline)
 
 ${bold("Campaigns")}  ${dim("— SERVER-SIDE managed dialing (vs. `calls campaign` = client-side CSV batching)")}
   whissle campaigns list | get <id>
@@ -270,6 +302,8 @@ ${bold("Channels — one agent, everywhere")}
   whissle numbers search [--country US] [--area 415]
   whissle numbers buy <+1…>              buy a number (deducts credits)
   whissle numbers connect <+1…> --agent <agent-id>   route inbound to that agent
+  whissle numbers provision [--country US] [--area-code 415] [--contains …] [--agent <id>] [--yes]   search → buy → route
+  whissle numbers assign <number-id> --agent <agent-id>   (alias of connect)
   whissle numbers list | release <number-id>
 
 ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
@@ -284,6 +318,7 @@ ${bold("Billing & usage")}
   whissle usage events [--days 30] [--service llm] [--limit 100]   raw metering events
   whissle usage sessions --day 2026-08-30   per-session breakdown for one day
   whissle usage export [--days 30] [--out usage.csv]    the whole window as CSV
+  whissle usage --by agent|cost_center|subject|session [--since ISO] [--until ISO]   who it was for
 
 Global: --json (machine output), --base-url <url>, --key <wsk_…>
 Per-command help: whissle <group> --help   (e.g. whissle sessions --help)

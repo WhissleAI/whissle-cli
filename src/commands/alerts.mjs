@@ -27,7 +27,33 @@ const RULE_FLAGS = {
   "cooldown-hours": ["cooldown_hours", "int"],
   enabled: ["enabled", "bool"],
   "notify-email": ["notify_email", "bool"],
+  // Contract kinds (balance_below_usd, p95_ms_over): a rule that fires the
+  // matching webhook event (balance.threshold / latency.threshold) rather than
+  // measuring a call metric. `--door` names which door's p95; `--webhook`
+  // targets one registered webhook.
+  kind: ["kind", "str"],
+  door: ["door", "str"],
+  webhook: ["webhook_id", "str"],
 };
+
+/** The rule kinds the contract adds on top of metric thresholds. */
+export const ALERT_KINDS = ["balance_below_usd", "p95_ms_over"];
+
+/**
+ * `alerts create --kind …` body: a kind-rule, with a default name and, for a
+ * balance rule, an implied comparator. Pure — exported for tests.
+ */
+export function kindRuleBody(flags) {
+  const body = ruleBody(flags);
+  if (!ALERT_KINDS.includes(body.kind)) fatal(`--kind must be one of ${ALERT_KINDS.join(" | ")}`);
+  if (body.threshold === undefined || Number.isNaN(body.threshold)) fatal("--threshold <number> is required.");
+  if (body.kind === "p95_ms_over" && !body.door) fatal("--door <chat_turn|chat_turn_stream|vision|listen_start|…> is required for p95_ms_over.");
+  if (!body.name) {
+    body.name = body.kind === "balance_below_usd" ? `Balance below $${body.threshold}` : `${body.door} p95 over ${body.threshold}ms`;
+  }
+  if (!body.comparator) body.comparator = body.kind === "balance_below_usd" ? "below" : "above";
+  return body;
+}
 
 /** The rule body from flags (or --file). Pure — exported for tests. */
 export function ruleBody(flags) {
@@ -125,6 +151,16 @@ async function runRules(verb, args, flags) {
 export async function run(sub, args, flags) {
   if (!sub || sub === "rules") return runRules(args[0], args.slice(1), flags);
 
+  if (sub === "create") {
+    // The contract's two kinds; a metric rule stays `alerts rules add`.
+    const body = kindRuleBody(flags);
+    const r = await post(EP.alerts.rules, body);
+    if (flags.json) return printJson(r);
+    ok(`Created alert ${r.id || ""} — ${r.name || body.name} (${body.kind} ${body.comparator} ${body.threshold})`);
+    out(dim(`  Fires ${body.kind === "balance_below_usd" ? "balance.threshold" : "latency.threshold"} on your webhooks (whissle webhooks list).`));
+    return;
+  }
+
   if (sub === "options") {
     // The vocabulary the rule editor accepts — metrics + comparators, from the
     // same whitelist the evaluator uses, so the CLI can never write a rule the
@@ -155,5 +191,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: alerts ${sub}. Try rules | rules add|update|delete|test | options | events.`);
+  fatal(`Unknown: alerts ${sub}. Try rules | rules add|update|delete|test | create --kind … | options | events.`);
 }

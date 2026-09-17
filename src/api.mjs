@@ -57,8 +57,21 @@ function fail(res, body) {
   throw new ApiError(res.status, msg, body);
 }
 
-/** Core JSON request. `query` is an object of string params; `body` is JSON. */
-export async function request(method, path, { query, body, cfg = loadConfig() } = {}) {
+/** Drop the headers a caller left unset, so `{ "Idempotency-Key": undefined }` sends nothing. */
+function extraHeaders(headers) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    if (v !== undefined && v !== null && v !== "") out[k] = String(v);
+  }
+  return out;
+}
+
+/**
+ * Core JSON request. `query` is an object of string params; `body` is JSON;
+ * `headers` are extra request headers (`Idempotency-Key`, `X-Whissle-On-Behalf-Of`,
+ * `X-Whissle-Cost-Center`) — unset ones are dropped, never sent as "undefined".
+ */
+export async function request(method, path, { query, body, headers, cfg = loadConfig() } = {}) {
   const url = new URL(cfg.baseUrl + path);
   for (const [k, v] of Object.entries(query || {})) {
     if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
@@ -68,6 +81,7 @@ export async function request(method, path, { query, body, cfg = loadConfig() } 
     headers: {
       ...authHeader(cfg),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...extraHeaders(headers),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
@@ -105,7 +119,7 @@ export async function upload(path, { filePath, fileField = "file", fields = {}, 
  *
  * Returns an async iterable of `{event, data}`.
  */
-export async function postStream(path, body, { cfg = loadConfig(), signal } = {}) {
+export async function postStream(path, body, { cfg = loadConfig(), signal, headers } = {}) {
   const res = await fetch(cfg.baseUrl + path, {
     method: "POST",
     headers: {
@@ -114,6 +128,7 @@ export async function postStream(path, body, { cfg = loadConfig(), signal } = {}
       // Not what selects the stream — the gateway does that by PATH, because
       // `Accept` crosses hops that may rewrite it. Sent for honesty only.
       Accept: "text/event-stream",
+      ...extraHeaders(headers),
     },
     body: JSON.stringify(body),
     signal,

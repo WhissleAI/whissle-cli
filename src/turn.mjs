@@ -227,3 +227,43 @@ export function turnFooterLines(payload, { verbose = false, showTools = false, t
   if (ev.length) lines.push("  " + ev[0], ...ev.slice(1));
   return lines;
 }
+
+/**
+ * `claims` → the receipt for a cited answer: each claim, and the chunk (with
+ * its document + version + score) it rests on. `retrieved` — every chunk the
+ * model was handed — is listed after, so "it did not cite X" can be checked
+ * against "it never saw X". Returns [] when there is nothing to show.
+ */
+export function claimLines(claims, retrieved, { width = 80 } = {}) {
+  const lines = [];
+  const cs = (claims || []).filter(Boolean);
+  if (cs.length) {
+    lines.push("  " + dim("claims:"));
+    cs.forEach((c, i) => {
+      const where = [c.doc_id, c.doc_version != null ? `v${c.doc_version}` : null].filter(Boolean).join(" ");
+      const bits = [c.chunk_id, where, typeof c.score === "number" ? `score ${c.score.toFixed(2)}` : null].filter(Boolean);
+      lines.push(`    ${dim(`[${i + 1}]`)} ${trunc(String(c.text ?? ""), width)}`);
+      if (bits.length) lines.push(`        ${dim(bits.join(" · "))}`);
+    });
+  }
+  const rs = (retrieved || []).filter(Boolean);
+  if (rs.length) {
+    lines.push("  " + dim(`retrieved: ${rs.length} chunk(s)`));
+    for (const r of rs) {
+      const where = [r.chunk_id, r.doc_id, r.doc_version != null ? `v${r.doc_version}` : null].filter(Boolean).join(" ");
+      lines.push(`    ${dim(where)}${typeof r.score === "number" ? dim(`  score ${r.score.toFixed(2)}`) : ""}`);
+    }
+  }
+  return lines;
+}
+
+/**
+ * The turn's own receipt: which model TIER served it and the trace id to pull
+ * the per-turn record with (`whissle sessions trace`). One dim line, or none.
+ */
+export function contractFooterLines(payload) {
+  const bits = [];
+  if (payload?.model_tier) bits.push(`tier ${payload.model_tier}`);
+  if (payload?.trace_id) bits.push(`trace ${payload.trace_id}`);
+  return bits.length ? ["  " + dim(bits.join(" · "))] : [];
+}

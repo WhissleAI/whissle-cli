@@ -23,11 +23,12 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { get, post } from "../api.mjs";
+import { get, post, postStream, ApiError } from "../api.mjs";
 import { loadConfig } from "../config.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, err, ok, md, dim, brand, bold, spinner, fatal } from "../ui.mjs";
-import { turnFooterLines } from "../turn.mjs";
+import { out, err, ok, md, dim, brand, bold, spinner, fatal, printJson } from "../ui.mjs";
+import { turnFooterLines, contractFooterLines, claimLines } from "../turn.mjs";
+import { drainStream, imageDataUrl } from "./companion.mjs";
 
 /** A new per-run session key. Exported for tests. */
 export function newSessionId() {
@@ -49,7 +50,10 @@ export function newSessionId() {
  * per-key catch-all thread, which is the one outcome `session_id` exists to
  * prevent. Sending both costs nothing and is correct on every branch.
  */
-export function turnBody({ message, conversationId, sessionId, context }) {
+export function turnBody({
+  message, conversationId, sessionId, context,
+  responseSchema, cite, facts, costCenter, modelTier, images,
+}) {
   return {
     message,
     // Ephemeral per-turn grounding — composed UNDER the agent's own prompt + KB
@@ -57,12 +61,149 @@ export function turnBody({ message, conversationId, sessionId, context }) {
     // never a persona override. This is what lets a live driver (a streamer
     // copilot's rolling stream state, a dashboard snapshot) ground one reply
     // without polluting the thread. Omitted when empty, so an older gateway that
-    // does not model the field behaves exactly as before.
+    // does not model the field behaves exactly as before. Up to 32,000 chars;
+    // over that the server answers 413 with the limit and what it got.
     ...(context ? { context } : {}),
+    // A JSON schema the reply must satisfy: validated server-side, one repair
+    // turn, then `schema_error` + `structured: null` — never a 5xx.
+    ...(responseSchema ? { response_schema: responseSchema } : {}),
+    // `cite: true` makes `retrieved` present and has the model emit `claims`
+    // that name the chunk each one rests on.
+    ...(cite ? { cite: true } : {}),
+    // Ground truth the guardrails can consult (`never_say … unless {fact}`).
+    ...(facts && Object.keys(facts).length ? { facts } : {}),
+    // Who pays: rides every usage row this turn writes (`usage --by cost_center`).
+    ...(costCenter ? { cost_center: costCenter } : {}),
+    // fast | default | complex — the response says which actually served.
+    ...(modelTier ? { model_tier: modelTier } : {}),
+    ...(images && images.length ? { images } : {}),
     ...(conversationId ? { conversation_id: conversationId } : {}),
     ...(sessionId ? { session_id: sessionId } : {}),
     source: "cli",
   };
+}
+
+/** The tiers a turn may ask for; the response says which one served. */
+export const MODEL_TIERS = ["fast", "default", "complex"];
+
+/**
+ * `k=v` facts from repeated `--facts` flags (plus a `--facts-file`), typed
+ * leniently: a value that parses as JSON (a number, true/false, a quoted
+ * string, an object) is sent as that; anything else is the string. Pure —
+ * exported for tests.
+ */
+export function parseFacts(flagValues, fileJson) {
+  const facts = { ...(fileJson && typeof fileJson === "object" ? fileJson : {}) };
+  for (const kv of [].concat(flagValues || [])) {
+    if (typeof kv !== "string") continue;
+    const i = kv.indexOf("=");
+    if (i <= 0) fatal(`--facts expects key=value, got "${kv}"`);
+    const key = kv.slice(0, i).trim();
+    const raw = kv.slice(i + 1);
+    let value = raw;
+    try { value = JSON.parse(raw); } catch { /* a bare string */ }
+    facts[key] = value;
+  }
+  return facts;
+}
+
+/**
+ * Everything a turn's flags say beyond the message: the contract fields, the
+ * header-borne subject, and whether to stream. Reads files eagerly so a bad
+ * path fails before the first turn rather than mid-conversation. Pure given
+ * `read` — exported for tests.
+ */
+export function turnOptions(flags, read = readFileSync) {
+  const str = (k) => (typeof flags[k] === "string" && flags[k] ? flags[k] : null);
+  const readJson = (path, what) => {
+    try { return JSON.parse(read(path, "utf8")); }
+    catch (e) { return fatal(`${what}: cannot read ${path} as JSON (${e.message})`); }
+  };
+  let context = str("context");
+  if (str("context-file")) {
+    try { context = read(flags["context-file"], "utf8"); }
+    catch (e) { fatal(`--context-file: cannot read ${flags["context-file"]} (${e.message})`); }
+  }
+  const modelTier = str("model-tier");
+  if (modelTier && !MODEL_TIERS.includes(modelTier)) {
+    fatal(`--model-tier must be one of ${MODEL_TIERS.join(" | ")}, got "${modelTier}"`);
+  }
+  const factsFile = str("facts-file") ? readJson(flags["facts-file"], "--facts-file") : null;
+  const facts = parseFacts(flags.facts, factsFile);
+  return {
+    context,
+    responseSchema: str("schema") ? readJson(flags.schema, "--schema") : null,
+    cite: flags.cite === true || String(flags.cite).toLowerCase() === "true",
+    facts,
+    costCenter: str("cost-center"),
+    modelTier,
+    images: [].concat(flags.image || []).filter((p) => typeof p === "string").map((p) => imageDataUrl(p, read)),
+    // Header-borne, never in the body: free text ≤ 120 chars naming who this
+    // turn is for, stamped onto its usage rows as `subject`.
+    headers: { "X-Whissle-On-Behalf-Of": str("on-behalf-of") },
+    stream: flags.stream === true,
+  };
+}
+
+/**
+ * A 413 from an over-long `context` carries the accepted shape — say it, rather
+ * than "413 Payload Too Large". Pure — exported for tests.
+ */
+export function explainTurnError(e) {
+  const b = e && e.body && typeof e.body === "object" ? e.body : null;
+  if (e && e.status === 413 && b && b.max_chars != null) {
+    return `context too long: ${b.got ?? "?"} chars, the limit is ${b.max_chars}. Trim --context / --context-file.`;
+  }
+  return e && e.message ? e.message : String(e);
+}
+
+/**
+ * Render a completed turn: the reply, then what the contract fields add —
+ * `structured` (or the `schema_error` that stood in for it), the `claims`
+ * behind a cited answer, the tool/evidence footer, and the tier + trace id.
+ */
+function renderTurn(r, { verbose, showTools, tools, cite }) {
+  if (r.reply || !r.structured) out(md(r.reply || dim("(no reply)")));
+  if (r.structured != null) {
+    out(dim("  structured:"));
+    for (const l of JSON.stringify(r.structured, null, 2).split("\n")) out("  " + l);
+  } else if (r.schema_error) {
+    out(brand("  ✗ schema_error: ") + r.schema_error);
+  }
+  if (cite) for (const l of claimLines(r.claims, r.retrieved)) out(l);
+  for (const l of turnFooterLines(r, { verbose, showTools, tools })) out(l);
+  for (const l of contractFooterLines(r)) out(l);
+}
+
+/** One turn, streamed or buffered, honouring `--json`. Returns the payload. */
+async function oneTurn(agentId, body, o, flags) {
+  if (o.stream) {
+    const frames = await postStream(EP.agents.chatTurnStream(agentId), body, { headers: o.headers });
+    if (flags.json && flags.events) {
+      for await (const f of frames) out(JSON.stringify({ event: f.event, data: f.data }));
+      return null;
+    }
+    const payload = await drainStream(frames, {
+      write: flags.json ? () => {} : (s) => process.stdout.write(s),
+      hint: `whissle sessions list --agent ${agentId}`,
+    });
+    if (flags.json) printJson(payload);
+    else renderTurn(payload, { verbose: flags.verbose, tools: "none", cite: o.cite });
+    return payload;
+  }
+  const stop = spinner("thinking…");
+  let r;
+  try {
+    r = await post(EP.agents.chatTurn(agentId), body, { headers: o.headers });
+  } catch (e) {
+    stop();
+    if (e instanceof ApiError && e.status === 413) fatal(explainTurnError(e));
+    throw e;
+  }
+  stop();
+  if (flags.json) printJson(r);
+  else renderTurn(r, { verbose: flags.verbose, showTools: flags.tools, cite: o.cite });
+  return r;
 }
 
 /**
@@ -93,10 +234,19 @@ export function sessionsUrl(studioUrl, agentId) {
   return `${(studioUrl || "").replace(/\/+$/, "")}/agents/${agentId}/calls`;
 }
 
+const TURN_USAGE =
+  'Usage: whissle chat turn <agent-id> -m "…" [--stream] [--schema s.json] [--cite]\n' +
+  "         [--context … | --context-file f] [--facts k=v …] [--facts-file f.json]\n" +
+  "         [--cost-center cc] [--model-tier fast|default|complex] [--on-behalf-of who] [--image f.png …]";
+
 export async function run(sub, args, flags) {
-  // `whissle chat <id>` — sub is the agent id here (no subcommands).
-  const agentId = sub;
-  if (!agentId) fatal("Usage: whissle chat <agent-id>   (find ids with `whissle agents list`)");
+  // `whissle chat <id>` — sub is the agent id. `whissle chat turn <id> -m …` is
+  // the explicit one-shot form (the same flags work on both).
+  const explicitTurn = sub === "turn";
+  const agentId = explicitTurn ? args[0] : sub;
+  if (!agentId) fatal(explicitTurn ? TURN_USAGE : "Usage: whissle chat <agent-id>   (find ids with `whissle agents list`)");
+  const o = turnOptions(flags);
+  if (explicitTurn && !(flags.m || flags.message) && !o.images.length) fatal(TURN_USAGE);
 
   const agent = await describeAgent(agentId, (id) => get(EP.agents.get(id)));
 
@@ -112,37 +262,23 @@ export async function run(sub, args, flags) {
     (typeof flags.c === "string" && flags.c) ||
     null;
 
-  // `--context <text>` / `--context-file <path>` inject ephemeral per-turn
-  // grounding (see turnBody). The file form wins when both are given, and reads
-  // synchronously up front so a bad path fails loudly before the first turn
-  // rather than mid-conversation.
-  let turnContext = (typeof flags.context === "string" && flags.context) || null;
-  if (typeof flags["context-file"] === "string" && flags["context-file"]) {
-    try {
-      turnContext = readFileSync(flags["context-file"], "utf8");
-    } catch (e) {
-      fatal(`--context-file: cannot read ${flags["context-file"]} (${e.message})`);
-    }
-  }
+  // `--context <text>` / `--context-file <path>` and the other per-turn fields
+  // (see turnOptions/turnBody) are read once, up front, for every turn.
+  const turnContext = o.context;
 
   // One-shot mode: `whissle chat <id> -m "message"` (scriptable).
-  if (flags.m || flags.message) {
-    const stop = spinner("thinking…");
-    const r = await post(
-      EP.agents.chatTurn(agentId),
-      // Both handles, always — see `turnBody`. A resumed thread is addressed by
-      // conversation_id and the session key is ignored; a `--conversation` the
-      // server declines to adopt falls back to it rather than to the per-key
-      // catch-all thread.
-      turnBody({ message: flags.m || flags.message, conversationId, sessionId, context: turnContext }),
-    );
-    stop();
-    if (flags.json) return out(JSON.stringify(r, null, 2));
-    out(md(r.reply));
-    for (const l of turnFooterLines(r, { verbose: flags.verbose, showTools: flags.tools })) out(l);
+  if (flags.m || flags.message || o.images.length) {
+    const msg = flags.m || flags.message || "What do you make of this?";
+    // Both handles, always — see `turnBody`. A resumed thread is addressed by
+    // conversation_id and the session key is ignored; a `--conversation` the
+    // server declines to adopt falls back to it rather than to the per-key
+    // catch-all thread.
+    const r = await oneTurn(agentId, turnBody({ message: msg, conversationId, sessionId, ...o }), o, flags);
+    if (!r || flags.json) return;
     if (r.conversation_id) out(dim(`\n  continue: --conversation ${r.conversation_id}`));
     return out(dim(`  saved to this agent's Sessions: ${sessionsUrl(cfg.studioUrl, agentId)}`));
   }
+  if (flags.json) fatal('`--json` needs a message: whissle chat <agent-id> -m "…" --json');
 
   out(brand("● ") + bold(agent.name) + dim(`  (${agent.agent_type || "general"})`));
   if (!agent.known) {
@@ -181,23 +317,16 @@ export async function run(sub, args, flags) {
       return prompt();
     }
     rl.pause();
-    const stop = spinner("thinking…");
     try {
-      const r = await post(
-        EP.agents.chatTurn(agentId),
-        turnBody({ message: text, conversationId, sessionId, context: turnContext }),
-      );
-      stop();
-      conversationId = r.conversation_id || conversationId;
-      out("\n" + brand(agent.name + " › ") + md(r.reply));
-      // The turn already carried its tool timeline and its KB citations; the CLI
-      // used to print the tool NAMES and throw both away. A cited answer whose
+      // The turn carries its tool timeline and its KB citations; the CLI used
+      // to print the tool NAMES and throw both away. A cited answer whose
       // citations you cannot see is indistinguishable from an uncited one.
-      for (const l of turnFooterLines(r, { verbose: flags.verbose, showTools: flags.tools })) out(l);
+      out("\n" + brand(agent.name + " › "));
+      const r = await oneTurn(agentId, turnBody({ message: text, conversationId, sessionId, ...o }), o, flags);
+      conversationId = r.conversation_id || conversationId;
       out("");
     } catch (e) {
-      stop();
-      err(brand("✗ ") + (e.message || e));
+      err(brand("✗ ") + explainTurnError(e));
     }
     rl.resume();
     prompt();

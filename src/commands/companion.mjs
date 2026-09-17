@@ -93,7 +93,7 @@ export function refreshedCount(v) {
  *
  * Exported for tests — pass any async iterable of frames.
  */
-export async function drainStream(frames, { write = (s) => process.stdout.write(s), onTool } = {}) {
+export async function drainStream(frames, { write = (s) => process.stdout.write(s), onTool, hint } = {}) {
   let payload = null;
   let hop = null;
   let wrote = false;
@@ -127,7 +127,7 @@ export async function drainStream(frames, { write = (s) => process.stdout.write(
   if (!payload) {
     throw new Error(
       "The stream ended without a result — the connection dropped. The turn still ran; " +
-        "read it with `whissle sessions list --agent companion`.",
+        `read it with \`${hint || "whissle sessions list --agent companion"}\`.`,
     );
   }
   return payload;

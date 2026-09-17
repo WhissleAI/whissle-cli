@@ -18,7 +18,7 @@ not alternatives — most integrations use two.
 | **[`@whissle/cli`](https://www.npmjs.com/package/@whissle/cli)** (this one) | your terminal, a CI job | `wsk_` workspace **secret** | the control plane: configure, run, and read back the workspace |
 | **[`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)** | the **browser** | `wpk_` **publishable** | embed a live voice agent in a web page |
 | **[`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk)** | server-side **Node** | `wsk_` workspace **secret** | the same control plane from your own backend — never in client code |
-| **`whissle_sdk` (Python, request self-host access)** | server-side **Python** | `wsk_` workspace **secret** | the same, for Python jobs, evals and notebooks |
+| **[`whissle-sdk`](https://github.com/WhissleAI/whissle-python)** (Python, `import whissle_sdk`) | server-side **Python** | `wsk_` workspace **secret** | the same, for Python jobs, evals and notebooks |
 
 A typical embed uses two of them: `@whissle/sdk` (or this CLI) on your server to
 mint each visitor a short-lived session token, and `@whissle/agents` in the page
@@ -129,7 +129,28 @@ whissle chat <agent-id> -m "what are your hours?" # one-shot
 whissle chat <agent-id> -m "and on Sundays?" --conversation <cid>   # continue that thread
 whissle chat <agent-id> -m "…" --tools            # the per-tool timeline, not just names
 whissle chat <agent-id> -m "…" --verbose          # quote the KB passages it cited
+whissle chat turn <agent-id> -m "…" [--stream] [--schema s.json] [--cite] [--context … | --context-file f]
+       [--facts k=v …] [--facts-file f.json] [--cost-center cc] [--model-tier fast|default|complex]
+       [--on-behalf-of who] [--image shot.png …]   # one contract turn, scriptable (same flags work on `chat <id> -m`)
 ```
+
+**The contract turn.** `chat turn` (and any `chat <id> -m …`) can carry the
+per-turn fields the gateway's turn doors accept:
+
+| Flag | Body field | What it does |
+|---|---|---|
+| `--context` / `--context-file` | `context` | up to 32,000 chars of ephemeral grounding, never stored; over that the server answers **413** and the CLI prints the limit and what you sent |
+| `--schema s.json` | `response_schema` | a JSON schema the reply must satisfy — validated server-side, one repair turn, then `structured` (printed as JSON) or a `schema_error` (printed in red, never a 5xx) |
+| `--cite` | `cite: true` | the reply comes with `claims` (`text → chunk_id / doc_id vN / score`) and the full `retrieved` set, both rendered |
+| `--facts k=v` / `--facts-file` | `facts` | ground truth the guardrails consult (`never_say … unless {fact}`); values are typed leniently (`12600` → number, `true` → boolean) |
+| `--cost-center cc` | `cost_center` | stamps every usage row this turn writes — see `whissle usage --by cost_center` |
+| `--model-tier` | `model_tier` | `fast` / `default` / `complex`; the footer says which tier actually served |
+| `--on-behalf-of who` | *header* `X-Whissle-On-Behalf-Of` | the subject (≤ 120 chars) usage is attributed to — a header, never a body field |
+| `--image f.png` (repeatable) | `images` | png / jpg / webp, sent as data URLs |
+| `--stream` | — | `POST …/chat/turn/stream`: deltas and tool events as they happen; the transcript of record is the `done` frame (`--json --events` prints every frame as NDJSON) |
+
+Every turn's footer shows `tier <model_tier> · trace <trace_id>`; the trace id
+is what `whissle sessions trace` reads back.
 
 `chat` conversations are **persisted**, not scratch. Each run opens its own
 session (stamped `source: "cli"`) and shows up in the studio under
@@ -156,6 +177,28 @@ you cannot see is indistinguishable from a guess.
 `chat` needs only `chat:invoke`. It reads the agent record for a name and a
 greeting when it can, and carries on without one when it cannot — a key scoped
 `chat:invoke` and nothing else can chat.
+
+### Listen & see (`sessions:write`)
+```bash
+whissle listen start <agent-id> [--language en] [--metadata]   # → {url, token, room, session_id}
+whissle listen tail <session-id> [--interval 2] [--once]        # follow transcript + signals until it ends
+whissle vision ask <agent-id> photo.jpg "what card is this?" [--hint "a graded card"] [--max-words 40]
+whissle vision batch <agent-id> --file items.json [--concurrency 2]   # ≤ 40 {id, image, question, hint?}
+```
+
+A **listen session** is the agent's ear with no mouth: hand the `{url, token}`
+to a browser (`@whissle/agents` `listen()`) or any LiveKit client, and the
+pipeline transcribes and reads the speaker — emotion/intent, words per minute,
+speech time, and `entity_disagreements` when the metadata head heard an entity
+the transcript lacks — all keyed by `turn_id`. `listen tail` follows one from
+the terminal by polling the session row (there is no server-sent transcript
+stream), printing only what is new each tick, and stops at `end_reason`;
+`--json` emits one NDJSON row per transcript line / signal. `sessions get` on a
+finished listen session shows its `end_reason` and **delivery** (style, pace).
+
+`vision ask` answers in a few words; when the model says nothing is clearly
+visible the CLI says *(nothing clearly visible)* rather than dressing that up.
+Priced as a vision call. In `vision batch`, `image` may be a path or a data URL.
 
 ### Your companion (`companion:invoke`)
 
@@ -396,11 +439,17 @@ whissle sessions trace <id> --json | jq '.signals.unavailable | keys'   # text o
 ### Action inbox (human-in-the-loop approvals)
 ```bash
 whissle actions list [--status pending|approved|rejected|auto_executed|all] [--agent <id>]
-whissle actions approve <id>                      # runs the held action (send link, book slot, …)
-whissle actions reject <id> [--reason "wrong number"]
+whissle actions approve <id> [--idempotency-key k]   # runs the held action (send link, book slot, …)
+whissle actions reject <id> [--reason "wrong number"] [--idempotency-key k]
+whissle actions bulk-approve --ids a,b,c | --all-pending [--agent <id>]   [--yes]
+whissle actions undo <id>                         # the tool's compensate step; 409 when it has none
 whissle actions scheduled                         # upcoming auto follow-up calls, soonest first
 whissle actions cancel-scheduled <id>
 ```
+`--idempotency-key` is sent as the `Idempotency-Key` header: a retried approve
+with the same key returns the first result instead of running the tool twice.
+A hold carries `evidence`, `rationale` and `expires_at` (`--json`); an expired
+hold resolves as `expired`.
 Sensitive post-call actions are **held as `pending`** until someone approves;
 auto-fired ones show up read-only as `auto_executed`. `list` also shows the
 pending count (the studio nav badge, from `/api/actions/count`).
@@ -442,12 +491,33 @@ whissle kb list <agent-id>
 whissle kb add <agent-id> --file handbook.pdf | --text "…" | --url https://acme.com/faq
 whissle kb update <agent-id> <doc-id> --text "…"   # replace a document in place (reindexed)
 whissle kb remove <agent-id> <doc-id> --force      # also disarms any lookup tool built from it
+whissle kb sync <agent-id> ./docs [--namespace site] [--prune] [--dry-run] [--ext md,txt,html,json,csv]
+whissle kb docs <agent-id> [--namespace site]      # the versioned documents (doc_version, chunks)
+whissle kb search <agent-id> "opening hours" [--k 5] [--namespace site]   # retrieval as the agent sees it
+whissle kb eval <agent-id> labels.json [--k 5]     # recall@1/3/5 + MRR over labelled questions
+whissle kb import-conversations <agent-id> export.zip   # a chat export, through the ingest door
+whissle kb import-status <agent-id> [<job-id>]     # poll a background import
 whissle tools list
 whissle tools create --file tool.json
 whissle tools update <tool-id> --file tool.json   # edit description / parameters / binding / enabled
 whissle tools delete <tool-id>
 whissle tools attach <tool-id> --agent <agent-id>
 ```
+
+**`kb sync`** is the operation you want when knowledge is generated from a
+source of truth you own. Every file under the directory becomes a versioned
+document whose `external_id` is its relative path and whose title is its first
+`# ` heading (else the filename); each is `PUT` with a sha256 `content_hash`.
+The server answers the same hash with `{unchanged: true}` and no re-embed — so a
+no-op sync costs one request per file and zero embedding — and new content with
+a new `doc_version`, retiring the old chunks (kept 30 days so old citations
+still resolve). `--prune` deletes server documents in that namespace whose path
+is no longer on disk; without it nothing is ever deleted. `--dry-run` prints
+the plan. The summary is `N added · N updated · N unchanged · N removed`.
+
+**`kb eval`** takes `[{question, expected_doc_id?, expected_chunk_id?}]` (or
+`{cases: […]}`) and reports recall@1/3/5, MRR and each case's `hit_rank` — the
+number to watch when you change chunking, a namespace, or the documents.
 
 #### Your own documents (`whissle kb me`)
 
@@ -547,7 +617,11 @@ whissle numbers list                              # your numbers
 whissle numbers available                         # claimable pool (no purchase)
 whissle numbers search --country US --area 415
 whissle numbers claim <number-id> | buy +14159675014 | connect +14159675014 --agent <id> | release <number-id>
+whissle numbers provision [--country US] [--area-code 415] [--contains 555] [--agent <id>] [--yes]   # search → buy → route
+whissle numbers assign <number-id> --agent <id>   # alias of connect
 ```
+`provision` buys the first search candidate (same confirmation as `buy`, or
+`--yes`) and, with `--agent`, routes inbound to that agent in the same go.
 
 ### Customers (contacts — agent-scoped)
 ```bash
@@ -567,13 +641,16 @@ whissle appointments blocked | block --date 2026-08-10 [--reason r] | unblock <b
 whissle appointments calendar                     # connection status
 ```
 
-### SMS (delivery log + consent)
+### SMS (send, delivery log, consent)
 ```bash
+whissle sms send --to +14155550123 --body "Your table is ready." [--from +1…] [--agent <id>]   # billed
 whissle sms messages [--limit 50]
 whissle sms opt-outs | consents
 whissle sms opt-in +14155550123                   # re-enable a suppressed number
 ```
-(Agents send SMS during calls; the CLI reads the log and manages consent.)
+`send` posts `{to_number, body, from_number?, agent_id?}` to the org's SMS
+route and bills for the message; a suppressed (opted-out) number is refused
+server-side. Agents still send most SMS themselves during and after calls.
 
 ### Analytics
 ```bash
@@ -590,13 +667,41 @@ whissle alerts rules add --name "Completion dropped" --metric completion_rate \
   [--min-calls 10] [--cooldown-hours 24]
 whissle alerts rules update <rule-id> --threshold 0.5 | delete <rule-id>
 whissle alerts rules test <rule-id>               # measure it RIGHT NOW — would it fire?
+whissle alerts create --kind balance_below_usd --threshold 20 [--webhook <id>]    # fires balance.threshold
+whissle alerts create --kind p95_ms_over --door chat_turn --threshold 1500        # fires latency.threshold
 whissle alerts options                            # the valid metrics + comparators
 whissle alerts events --days 30                   # what actually fired
 ```
+`create --kind` adds the two contract kinds on top of metric rules: a wallet
+floor (`balance_below_usd`) and a per-door p95 ceiling (`p95_ms_over`, `--door`
+names the door — `chat_turn`, `chat_turn_stream`, `vision`, `listen_start`, …).
+Each fires the matching webhook event (`balance.threshold` /
+`latency.threshold`) on your webhooks; `--webhook <id>` targets one.
 Rules are evaluated on a server-side loop and email you when they fire (turn
 that off per rule with `--notify-email false`). `test` runs the same measurement
 inline with no event row, no email and no cooldown consumed — sanity-check a new
 rule instead of waiting a tick for it. Rule writes need an owner/admin key.
+
+### Webhooks (your endpoint, called when things happen)
+```bash
+whissle webhooks create --url https://you.example/hook --events session.ended,tool.held [--secret s]
+whissle webhooks list | delete <id> --force | test <id>
+whissle webhooks deliveries <id> [--limit 50]     # every attempt, incl. dead-lettered ones
+whissle webhooks replay <id> <delivery-id>        # re-send one
+whissle webhooks events                           # the event kinds + the signature scheme (offline)
+```
+Events: `session.ended` (with `end_reason`, `duration_sec`, `cost_usd`),
+`tool.held`, `approval.decided`, `kb.ingested`, `balance.threshold`,
+`latency.threshold`. Every body is `{id, type, created_at, organization_id,
+data}` and every delivery is signed:
+
+```
+X-Whissle-Signature: t=<unix>,v1=hex(hmac-sha256(secret, t + "." + body))
+```
+
+Verify over `t + "." + rawBody`, reject a stale `t`. The `secret` is printed
+**once**, by `create`. Failed deliveries retry at 1m / 5m / 30m, then
+dead-letter — and stay listed under `deliveries`, where `replay` re-sends one.
 
 ### Campaigns (server-side, managed)
 ```bash
@@ -633,11 +738,17 @@ whissle usage summary [--days 30] [--channel voice]   # the METERING view: total
 whissle usage events [--days 30] [--service llm] [--channel …] [--limit 100] [--offset 0]
 whissle usage sessions --day 2026-08-30 [--channel voice]   # per-session breakdown for one day
 whissle usage export [--days 30] [--out usage.csv]    # the whole window as CSV (--out - for stdout)
+whissle usage --by agent|cost_center|subject|session [--since ISO] [--until ISO]   # the ATTRIBUTION view
 whissle models chat "Summarize this" --fast
 whissle models tts "Hello" --out hi.mp3                       # English (default)
 whissle models tts "नमस्ते, कैसे हैं आप?" --language hi --out namaste.mp3   # speaks Hindi
 whissle models voices                             # voice ids for --voice (grouped by engine)
 ```
+`usage --by` reads `/api/usage`: every usage row carries `agent_id`,
+`session_id`, the `cost_center` a turn passed (or the `X-Whissle-Cost-Center`
+header) and the `subject` a key stamped (`X-Whissle-On-Behalf-Of`, or a sub-key's
+own) — grouped, with calls / tokens / seconds / USD per group and a total row.
+
 `models tts` takes `--language en|hi|te|hinglish|tenglish` (omit it and the platform
 auto-detects from the script); the voice/engine is chosen for you, never exposed.
 
@@ -684,6 +795,9 @@ didn't exist when it was made.
 | **companion** (your assistant) | `companion:invoke` — resolves to the key's creator, nobody else |
 | calls, campaign (client batch) | `calls:read` / `calls:write` (start/campaign place calls; `result` is read) |
 | **sessions** (voice + text history, traces) | `calls:read` |
+| **listen** (`listen start`) | `sessions:write` — `listen tail` reads with `calls:read` |
+| **vision** | `agents:read` + the vision call is metered under `vision` |
+| **webhooks** | any valid key — the key resolves the org *(writes = owner/admin)* |
 | **actions** (inbox) | `actions:read` / `actions:write` (approve/reject/cancel) |
 | **compliance** | `compliance:read` / `compliance:write` *(write = owner/admin)* |
 | kb (agent) and **kb me** (your own) | `kb:read` / `kb:write` |
@@ -701,7 +815,7 @@ didn't exist when it was made.
 | **memory** | `memory:read` / `memory:write` |
 | models | `models:invoke` |
 | usage (the wallet) | `billing:read` |
-| **usage summary/events/sessions/export** | `usage:read` |
+| **usage summary/events/sessions/export**, **usage --by** | `usage:read` |
 | **voices, reports, simulations, alerts** | any valid key — the key resolves the org *(alert-rule writes need an owner/admin key)* |
 
 ## Scripting contract
@@ -804,7 +918,7 @@ esac
 
 | Key | Where it runs | What it can do |
 |---|---|---|
-| `wsk_…` secret | server / CLI (this tool), [`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk), `whissle_sdk` (Python, request self-host access) | everything your scopes allow — manage the workspace, read all records |
+| `wsk_…` secret | server / CLI (this tool), [`@whissle/sdk`](https://www.npmjs.com/package/@whissle/sdk), [`whissle-sdk`](https://github.com/WhissleAI/whissle-python) (Python) | everything your scopes allow — manage the workspace, read all records |
 | `wpk_…` publishable | the browser ([`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)) | start a voice session with one agent, nothing else |
 
 **Never put a `wsk_` key in a browser.**

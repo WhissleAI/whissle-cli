@@ -265,19 +265,41 @@ export function llmLines(d) {
   return lines;
 }
 
+/**
+ * The per-turn latency breakdown a traced text turn carries
+ * (`{retrieve, llm, guard, total}`), or the bare number an older trace stored.
+ * Exported for tests.
+ */
+export function latencyBits(latency) {
+  if (typeof latency === "number") return ms(latency) ? [ms(latency)] : [];
+  if (!latency || typeof latency !== "object") return [];
+  const parts = ["retrieve", "llm", "guard"].filter((k) => ms(latency[k])).map((k) => `${k} ${ms(latency[k])}`);
+  const total = ms(latency.total);
+  if (total) return [total + (parts.length ? ` (${parts.join(", ")})` : "")];
+  return parts;
+}
+
 /** A `text_turn` snapshot → the turn's outcome line(s). */
 export function turnLines(d) {
   const lines = [];
   const bits = [];
-  if (ms(d.latency_ms)) bits.push(ms(d.latency_ms));
+  bits.push(...latencyBits(d.latency_ms));
+  if (d.model_tier) bits.push(`tier ${d.model_tier}`);
   if (Number.isInteger(d.hops)) bits.push(`${d.hops} hop${d.hops === 1 ? "" : "s"}`);
   const label = providerLabel(d);
   if (label) bits.push(label);
   const tok = TOKENS(d);
   if (tok) bits.push(tok);
   if (Number.isInteger(d.tool_count)) bits.push(`${d.tool_count} tool${d.tool_count === 1 ? "" : "s"}${d.tools_failed ? `, ${d.tools_failed} failed` : ""}`);
+  if (Array.isArray(d.retrieved) && d.retrieved.length) bits.push(`${d.retrieved.length} chunk${d.retrieved.length === 1 ? "" : "s"} retrieved`);
+  if (typeof d.cost_usd === "number") bits.push(`$${d.cost_usd.toFixed(4)}`);
   if (d.flow_state) bits.push(`state ${d.flow_state}`);
   lines.push(`⏱ turn${bits.length ? "  " + bits.join(" · ") : ""}`);
+  if (d.guardrail && typeof d.guardrail === "object" && d.guardrail.verdict) {
+    const rules = Array.isArray(d.guardrail.matched_rules) ? d.guardrail.matched_rules : [];
+    const line = `   ${d.guardrail.verdict === "allow" ? "🛡 guardrail allow" : `🛡 GUARDRAIL ${String(d.guardrail.verdict).toUpperCase()}`}${rules.length ? ` — ${rules.map((r) => (typeof r === "string" ? r : r.rule || r.id || JSON.stringify(r))).join(", ")}` : ""}`;
+    lines.push(line);
+  }
   if (d.failed_over) lines.push(`   ⚑ FAILED OVER — this turn was answered by ${label || "the fallback provider"}, not the primary`);
   if (d.max_hops_hit) lines.push(`   ! hit the hop ceiling — the reply may be truncated mid-plan`);
   if (d.empty_reply) lines.push(`   ! the model returned an empty reply`);
@@ -420,8 +442,21 @@ function renderDetail(s) {
     direction: s.direction,
     created_at: s.created_at,
     ended_at: s.ended_at || s.last_activity_at,
+    end_reason: s.end_reason,
   }, ["kind", "agent", "agent_type", "channel", "source", "status", "disposition",
-      "duration_sec", "turn_count", "to_number", "direction", "created_at", "ended_at"]);
+      "duration_sec", "turn_count", "to_number", "direction", "created_at", "ended_at", "end_reason"]);
+
+  // Delivery: how the person spoke, from the stored turn signals — the headline
+  // for a listen session (the old "dominant_emotion" is no longer it).
+  const dl = s.delivery;
+  if (dl && typeof dl === "object") {
+    out("\n" + bold("Delivery"));
+    kv({
+      style: dl.style ? `${dl.style.label || "—"}${dl.style.detail ? dim(`  ${dl.style.detail}`) : ""}` : undefined,
+      pace_wpm: dl.pace_wpm != null ? Math.round(dl.pace_wpm) : undefined,
+      trajectory: Array.isArray(dl.trajectory) ? `${dl.trajectory.length} point(s) — --json for the series` : undefined,
+    }, ["style", "pace_wpm", "trajectory"]);
+  }
 
   const meta = s.metadata || {};
   const ss = meta.session_summary || (typeof meta.summary === "string" ? { summary: meta.summary } : null);

@@ -36,9 +36,39 @@ export const EP = {
       doc: (id, docId) => `/api/agents/${id}/kb/${docId}`,
       fromUrl: (id) => `/api/agents/${id}/kb/from-url`,
       upload: (id) => `/api/agents/${id}/kb/upload`,
+      // THE drop-anything door (a document, a .zip of them, a chat export):
+      // multipart; answers a manifest inline (201) or a background job (202)
+      // that `ingestJob` polls. GET the bare path is the LATEST job.
+      ingest: (id) => `/api/agents/${id}/kb/ingest`,
+      ingestJob: (id, jobId) => `/api/agents/${id}/kb/ingest/${jobId}`,
+      // Versioned documents keyed by the CALLER'S id (a path, a CMS slug):
+      // PUT upserts `{title, content, mime?, namespace?, content_hash?}` — the
+      // same hash answers `{unchanged:true}` with no re-embed, new content is a
+      // new `doc_version` with the old chunks retired. DELETE is the same path.
+      // `externalId` must be URL-encoded by the caller (path segment).
+      docs: (id) => `/api/agents/${id}/kb/docs`,
+      docByExternalId: (id, externalId) => `/api/agents/${id}/kb/docs/${externalId}`,
+      // Retrieval as the agent sees it: `?q=&k=&namespace=` → scored chunks.
+      search: (id) => `/api/agents/${id}/kb/search`,
+      // Labelled questions in, recall@k + MRR out — is retrieval finding it?
+      eval: (id) => `/api/agents/${id}/kb/eval`,
     },
-    // Interactive text chat with the agent's brain + tools.
+    // Interactive text chat with the agent's brain + tools. `chatTurnStream` is
+    // the same turn narrated as text/event-stream (`open` → (delta|tool)* →
+    // `done`, where `done` carries the byte-identical body `chatTurn` returns);
+    // `chatBatch` is classification-grade fan-out (≤ 50 items, `model_tier:
+    // "fast"`).
     chatTurn: (id) => `/api/agents/${id}/chat/turn`,
+    chatTurnStream: (id) => `/api/agents/${id}/chat/turn/stream`,
+    chatBatch: (id) => `/api/agents/${id}/chat/batch`,
+    // A LISTEN session: the agent's ear with no mouth — transcript + signals
+    // (emotion/intent, wpm, entity disagreements) on the data channel, per
+    // `turn_id`. Answers `{url, token, room, session_id}`; scope sessions:write.
+    listenStart: (id) => `/api/agents/${id}/listen/start`,
+    // One image, one question → `{answer, clear, model_tier, trace_id}`.
+    // Priced as a vision call. `visionBatch` fans out ≤ 40 of them.
+    vision: (id) => `/api/agents/${id}/vision`,
+    visionBatch: (id) => `/api/agents/${id}/vision/batch`,
     // Web embed (voice/text widget) config.
     embed: (id) => `/api/agents/${id}/embed`,
     // Saved-config history: every meaningful save is snapshotted; rollback
@@ -51,6 +81,11 @@ export const EP = {
     // these are the read-models + generate/trace + draft→live lifecycle.
     workflow: (id) => `/api/agents/${id}/workflow`,
     guardrails: (id) => `/api/agents/${id}/guardrails`,
+    // Guardrail observability: blocks by rule + redacted samples over a window,
+    // and a dry run (`{message, facts?}` → `{draft, verdict, matched_rules}`)
+    // that runs the real turn with store:false and bills nobody's contact list.
+    guardrailsAnalytics: (id) => `/api/agents/${id}/guardrails/analytics`,
+    guardrailsDryRun: (id) => `/api/agents/${id}/guardrails/dry-run`,
     flowGenerate: (id) => `/api/agents/${id}/flow/generate`,
     flowTrace: (id) => `/api/agents/${id}/flow/trace`,
     publish: (id) => `/api/agents/${id}/publish`,
@@ -154,6 +189,11 @@ export const EP = {
     count: "/api/actions/count",
     approve: (id) => `/api/actions/${id}/approve`,
     reject: (id) => `/api/actions/${id}/reject`,
+    // Many at once, `{ids}`. `approve`/`reject` honour an `Idempotency-Key`
+    // header (a repeat returns the first result); `undo` runs the tool's
+    // `compensate()` and is 409 `not undoable` for a tool that declares none.
+    bulkApprove: "/api/actions/bulk-approve",
+    undo: (id) => `/api/actions/${id}/undo`,
     scheduled: "/api/actions/scheduled",
     cancelScheduled: (id) => `/api/actions/scheduled/${id}/cancel`,
   },
@@ -247,6 +287,30 @@ export const EP = {
     events: "/api/alerts/events",
   },
 
+  // ── outbound webhooks (routes/webhooks.py) ───────────────────────────────────
+  // `{url, events[], secret?}` → `{id, secret}` (the secret is shown ONCE).
+  // Deliveries are signed `X-Whissle-Signature: t=…,v1=hex(hmac-sha256(secret,
+  // t + "." + body))`, retried 1m/5m/30m, then dead-lettered — and visible, and
+  // replayable, under `deliveries`. Key resolves the org, so NOT org-prefixed.
+  webhooks: {
+    list: "/api/webhooks",
+    create: "/api/webhooks",
+    del: (id) => `/api/webhooks/${id}`,
+    test: (id) => `/api/webhooks/${id}/test`,
+    deliveries: (id) => `/api/webhooks/${id}/deliveries`,
+    replay: (id, deliveryId) => `/api/webhooks/${id}/deliveries/${deliveryId}/replay`,
+  },
+
+  // ── attributed usage (routes/usage.py, the key resolves the org) ─────────────
+  // `?by=agent|cost_center|subject|session&since=&until=` → `{groups, total}`.
+  // Distinct from the org-prefixed `usage.*` metering below: this one answers
+  // "who / what for", grouped by the `cost_center` a turn carried and the
+  // `X-Whissle-On-Behalf-Of` subject a key stamped.
+  usageBy: "/api/usage",
+
+  // ── platform status: per-door p95 latency + degraded tools (public) ──────────
+  status: "/api/status",
+
   // ── AI transcript reports (routes/reports.py) ────────────────────────────────
   // `generate` queues a background analyst run over a transcript window; poll
   // `list` for the finished markdown. `corpus` hands the SAME window back as
@@ -338,6 +402,8 @@ export const EP = {
 
   // ── org-scoped: SMS delivery log + consent (/api/orgs/{org}/sms) ─────────────
   sms: {
+    // Sends a real text message and bills for it. `{to_number, body, from_number?, agent_id?}`.
+    send: (org) => `/api/orgs/${org}/sms/send`,
     messages: (org) => `/api/orgs/${org}/sms/messages`,
     optOuts: (org) => `/api/orgs/${org}/sms/opt-outs`,
     // `phone` must be URL-encoded by the caller (path segment).
