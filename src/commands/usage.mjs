@@ -49,9 +49,42 @@ async function runWallet(flags) {
     );
   }
   out(dim("\n  What was consumed (not the money): whissle usage summary | events | sessions | export"));
+  out(dim("  Who it was for: whissle usage --by agent|cost_center|subject|session"));
+}
+
+/** The valid `--by` groupings (the server's own list). */
+export const USAGE_BY = ["agent", "cost_center", "subject", "session"];
+
+/** The `/api/usage` query from flags. Pure — exported for tests. */
+export function usageByQuery(flags) {
+  const by = String(flags.by);
+  if (!USAGE_BY.includes(by)) fatal(`--by must be one of ${USAGE_BY.join(" | ")}, got "${by}"`);
+  return { by, since: flags.since, until: flags.until };
+}
+
+const usd = (v) => (typeof v === "number" ? `$${v.toFixed(4).replace(/0+$/, "").replace(/\.$/, ".0")}` : v ?? "—");
+
+async function runBy(flags) {
+  // Attributed usage: who / what for. Every usage row carries agent_id,
+  // session_id, cost_center (from the turn body or X-Whissle-Cost-Center) and
+  // subject (X-Whissle-On-Behalf-Of, or a sub-key's own). Not org-prefixed.
+  const res = await get(EP.usageBy, { query: usageByQuery(flags) });
+  if (flags.json) return printJson(res);
+  const groups = res?.groups || [];
+  const t = res?.total || {};
+  table(
+    [String(flags.by).toUpperCase(), "CALLS", "TOKENS IN", "TOKENS OUT", "SECONDS", "USD"],
+    [
+      ...groups.map((g) => [trunc(g.key ?? "—", 32), g.calls ?? 0, g.tokens_in ?? 0, g.tokens_out ?? 0, g.seconds ?? 0, usd(g.usd)]),
+      ["total", t.calls ?? 0, t.tokens_in ?? 0, t.tokens_out ?? 0, t.seconds ?? 0, usd(t.usd)],
+    ],
+  );
+  out(dim(`\n  ${groups.length} group(s)  ·  narrow with --since ISO --until ISO`));
 }
 
 export async function run(sub, args, flags) {
+  // `whissle usage --by agent|cost_center|subject|session` — attribution.
+  if (flags.by && (!sub || sub === "by")) return runBy(flags);
   // Bare `whissle usage` stays exactly what it always was: the wallet.
   if (!sub || sub === "wallet") return runWallet(flags);
 

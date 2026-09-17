@@ -66,6 +66,20 @@ src/commands/
                        failing the turn. Withholding the session key there dropped that turn
                        into `key:<api-key-id>`, the per-key catch-all thread session_id exists
                        to prevent. (routes/agents.py ChatTurnBody + session_history.thread_key.)
+                       `chat turn <id> -m …` is the explicit one-shot; turnOptions() reads the contract
+                       fields (--schema → response_schema, --cite, --facts, --cost-center, --model-tier,
+                       --context/--context-file, --image) and puts --on-behalf-of in the
+                       X-Whissle-On-Behalf-Of HEADER. --stream drives EP.agents.chatTurnStream with the
+                       companion's frame vocabulary (drainStream is shared). A 413 is explained with the
+                       server's max_chars/got (explainTurnError). Footer: tier + trace_id (turn.mjs).
+  listen.mjs           start / tail                             (sessions:write; POST /api/agents/{id}/listen/start)
+                       start prints {url, token, room, session_id}. tail has NO server stream to read: it
+                       polls EP.sessions.get and prints only what is new (diffTail, pure + tested) until the
+                       row carries end_reason. --once = one poll, for scripts; --json = NDJSON rows.
+  vision.mjs           ask / batch                              (POST /api/agents/{id}/vision[/batch]; metered as `vision`)
+                       image paths → data URLs (png/jpg/webp/gif; a data: URL passes through); batch ≤ 40.
+  webhooks.mjs         list / create / delete / test / deliveries / replay / events   (/api/webhooks — NOT org-prefixed)
+                       create prints the secret ONCE + the signature scheme; `events` is offline (the six kinds).
   calls.mjs            start / campaign / list / get / result / transcript / audio / export
                        start = one outbound call; campaign = one call per CSV row (each column ->
                        a dynamic {{variable}}, --to-col picks the callee, gated by --dry-run/--yes).
@@ -86,17 +100,25 @@ src/commands/
                        intent, age/gender, fillers, wpm) and provider/model appear only as llm_call
                        entries in `events`, where the live recorder caught them. Do not assume one shape.
                        Pure shapers (summarize/groupByTurn/partitionEvents/*Lines) are exported + unit-tested.
-  actions.mjs          list / approve / reject / scheduled / cancel-scheduled   (actions:read/write; /api/actions —
-                       NOT org-prefixed. The human-approval queue for held post-call actions + scheduled follow-ups.)
+  actions.mjs          list / approve / reject / bulk-approve / undo / scheduled / cancel-scheduled   (actions:read/write;
+                       /api/actions — NOT org-prefixed. The human-approval queue for held post-call actions +
+                       scheduled follow-ups. --idempotency-key → the Idempotency-Key header; undo is 409 for a
+                       tool with no compensate(); bulk-approve gates on --yes off a TTY like `numbers buy`.)
   compliance.mjs       suppressions / suppress / unsuppress / settings [set] / events / readiness / erase
                        (compliance:read/write; org-scoped: /api/orgs/{org}/compliance — Do-Not-Call list, dial
                        rules, evidence trail). `settings set` also takes the two one-time attestations
                        (--contacts-are-customers / --outreach-attested); `readiness` = named blockers + fixes;
                        `erase` = GDPR/CCPA erasure (insists on --force; keeps the DNC entry + erasure event).
-  kb.mjs               list / add (text|file|url) / update / remove   (kb:read/write)
+  kb.mjs               list / add (text|file|url) / update / remove / sync / docs / search / eval /
+                       import-conversations / import-status   (kb:read/write)
                        update/remove act on ONE document (EP.agents.kb.doc). They're what makes a
                        knowledge sync idempotent — without them a re-push only ever ADDS, so an
                        agent ends up holding every past revision and retrieval quotes the oldest.
+                       sync <dir> = the VERSIONED door (EP.agents.kb.docByExternalId): external_id is the
+                       relative path (encodeURIComponent'd — it is a path segment), body carries a sha256
+                       content_hash so the server answers {unchanged:true} with no re-embed. planSync/
+                       applySync/walkDir/hashContent are pure and injectable; applySync accounts
+                       added/updated/unchanged/removed from the server's own replies. --prune only.
   tools.mjs            list / create / attach                   (org-scoped: /api/orgs/{org}/tools)
   connectors.mjs       list / add / remove                      (connectors:read/write; org-scoped: /api/orgs/{org}/credentials)
                        stored org credentials, e.g. a FHIR/EHR server — an agent's fhir_* tools resolve them.
@@ -108,14 +130,16 @@ src/commands/
                        come from the mint response's `transport` descriptor (connectHints(), pure,
                        tested) — never hardcode /api/embed/offer; older gateways without a
                        descriptor fall back to the known doors.
-  numbers.mjs          list / available / search / buy / claim / connect / release  (numbers:read/write; /api/orgs/{org}/twilio)
+  numbers.mjs          list / available / search / buy / provision / claim / connect / assign / release
+                       (numbers:read/write; /api/orgs/{org}/twilio) provision = search → buy first → route; assign = connect.
   integrations.mjs     catalog / list / add / connect / attach / detach / remove   (MCP connector store; org-scoped: /api/orgs/{org}/integrations) †
   models.mjs           chat / tts / transcribe                  (models:invoke)
   keys.mjs             list / create / reveal / delete          (org-scoped: /api/orgs/{org}/api-keys) — secret shown once on create †
   team.mjs             list / invite / revoke                   (invitations; org-scoped: /api/orgs/{org}/invitations) †
   customers.mjs        list / get / create / import / update / delete   (contacts:read/write; /api/customers — NOT org-prefixed; contacts are agent-scoped so create/import need --agent)
   appointments.mjs     list / hours / set-hours / blocked / block / unblock / calendar   (org-scoped: /api/orgs/{org}/appointments; --agent optional) †
-  sms.mjs              messages / opt-outs / consents / opt-in  (org-scoped: /api/orgs/{org}/sms — read + consent mgmt; agents send SMS, not the CLI) †
+  sms.mjs              send / messages / opt-outs / consents / opt-in  (org-scoped: /api/orgs/{org}/sms — send is billed;
+                       {to_number, body, from_number?, agent_id?}; the rest is the log + consent mgmt) †
   analytics.mjs        query / options / charts                 (analytics:read; org-scoped: /api/orgs/{org}/analytics)
   campaigns.mjs        list / get / create / action             (campaigns:read/write; /api/campaigns — SERVER-SIDE managed, vs. `calls campaign` = client-side CSV batching)
   meetings.mjs         list / get / schedule / cancel           (notetaker; /api/meetings) †
@@ -125,12 +149,15 @@ src/commands/
   usage.mjs            bare = the MONEY view (wallet balance + ledger, /api/orgs/{org}/wallet, billing:read);
                        summary / events / sessions / export = the METERING view (/api/orgs/{org}/usage/*,
                        usage:read — the append-only usage_events table; export streams the window as CSV).
+                       --by agent|cost_center|subject|session = the ATTRIBUTION view (EP.usageBy = /api/usage,
+                       NOT org-prefixed): {groups:[{key, calls, tokens_in, tokens_out, seconds, usd}], total}.
   reports.mjs          list / generate / show / corpus          (/api/reports — background analyst runs over a
                        transcript window; NO per-report GET exists, `show` picks from the list. `corpus` is the
                        plain-text window via raw(); anti-lock-in on purpose.)
-  alerts.mjs           rules [add|update|delete|test] / options / events   (/api/alerts — metric thresholds
-                       evaluated server-side; `rules test` measures inline with no event/email/cooldown.
-                       Rule writes need an owner/admin key.)
+  alerts.mjs           rules [add|update|delete|test] / create --kind / options / events   (/api/alerts — metric
+                       thresholds evaluated server-side; `rules test` measures inline with no event/email/cooldown.
+                       `create --kind balance_below_usd|p95_ms_over [--door] [--webhook]` posts a kind-rule to the
+                       SAME /api/alerts/rules (kindRuleBody, pure). Rule writes need an owner/admin key.)
 
   † These backend routes are cookie-auth today; a parallel backend PR makes them
     `wsk_`-key-authable. The CLI commands are correct and light up once that lands.

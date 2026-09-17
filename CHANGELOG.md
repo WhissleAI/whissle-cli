@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.5.0 — 2026-09-16
+
+The platform-contract round: the gateway's new doors (listen, vision, versioned
+knowledge, attributed usage, webhooks) and the per-turn fields on the chat turn,
+plus the long tail that had endpoints and no verbs. Everything is additive; a
+1.4.0 invocation sends exactly the bytes it did before.
+
+> Version note: the shared contract asked for 1.3.0. That number (and 1.4.0)
+> had already shipped — `chat --context` and embed-in-create — so this is 1.5.0.
+
+### Added
+
+- **`whissle chat turn <agent> -m "…"`** — the explicit one-shot form, with the
+  contract's per-turn fields (which also work on `whissle chat <agent> -m …`):
+  `--schema <file>` (`response_schema`; prints `structured`, or the
+  `schema_error` in red), `--cite` (`claims` with chunk / doc / version / score,
+  and the `retrieved` set), `--context` / `--context-file` (a 413 now says the
+  limit and what was sent), `--facts k=v` / `--facts-file`, `--cost-center`,
+  `--model-tier fast|default|complex`, `--on-behalf-of` (the
+  `X-Whissle-On-Behalf-Of` header), repeatable `--image`, and `--stream`
+  (`POST …/chat/turn/stream`, the same `open → delta|tool* → done` frames the
+  companion streams; `--json --events` prints every frame). Every turn's footer
+  shows `tier … · trace …`.
+- **`whissle listen`** (new group) — `start <agent> [--language] [--metadata]`
+  opens a listen room and prints `{url, token, room, session_id}`; `tail
+  <session> [--interval] [--once]` follows its transcript and signals
+  (emotion / intent with `turn_id`, words per minute, speech ms, entity
+  disagreements) by polling the session row until `end_reason`, printing only
+  what is new. `sessions get` renders `end_reason` and the `delivery` block.
+- **`whissle vision`** (new group) — `ask <agent> <image> "<question>"
+  [--hint] [--max-words]` (says *(nothing clearly visible)* on `clear:false`)
+  and `batch <agent> --file items.json [--concurrency]` (≤ 40 items; paths or
+  data URLs).
+- **`whissle kb sync <agent> <dir>`** — versioned documents keyed by relative
+  path, `PUT` with a sha256 `content_hash` so an unchanged file is one request
+  and no re-embed; `--prune`, `--dry-run`, `--namespace`, `--ext`. Plus **`kb
+  docs`** (versions + chunks), **`kb search`** (retrieval as the agent sees
+  it), **`kb eval <labels.json>`** (recall@1/3/5 + MRR + per-case hit rank),
+  **`kb import-conversations <file>`** (the ingest door) and **`kb
+  import-status`**.
+- **`whissle usage --by agent|cost_center|subject|session [--since] [--until]`**
+  — the attribution view (`GET /api/usage`): calls, tokens, seconds and USD per
+  group, with a total row.
+- **`whissle sessions trace`** for a text session now shows each turn's
+  `model_tier`, the `latency_ms` breakdown (retrieve / llm / guard / total),
+  chunks retrieved, the guardrail verdict + matched rules, and `cost_usd`.
+- **`whissle webhooks`** (new group) — `create --url … --events a,b [--secret]`
+  (the secret is printed once, with the signature scheme), `list`, `delete`,
+  `test`, `deliveries` (attempts, dead-letters), `replay`, and an offline
+  `events` that lists the six event kinds.
+- **`whissle alerts create --kind balance_below_usd|p95_ms_over`** — the two
+  contract kinds (`--door` for p95, `--webhook` to target one); metric rules
+  are unchanged.
+- **`whissle actions bulk-approve (--ids … | --all-pending)`**, **`actions
+  undo <id>`** (409 → "not undoable", exit 1), and `--idempotency-key` on
+  `approve` / `reject` (the `Idempotency-Key` header).
+- **`whissle sms send --to … --body … [--from] [--agent]`** — the send route.
+- **`whissle numbers provision [--country] [--area-code] [--contains]
+  [--agent]`** (search → buy → route) and **`numbers assign`** (alias of
+  `connect`).
+- `src/api.mjs`: `request()` / `postStream()` take a `headers` option.
+
+### Changed
+
+- The README's package table now points at the Python SDK's repo
+  (`whissle-sdk`, `import whissle_sdk`).
+
 ## 1.1.0 — 2026-09-01
 
 Gateway parity: CLI surface for platform features that shipped without one.

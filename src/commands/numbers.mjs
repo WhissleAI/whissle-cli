@@ -1,4 +1,4 @@
-// whissle numbers list|available|search|buy|connect|release
+// whissle numbers list|available|search|buy|provision|connect|assign|release
 // Buy a phone number (deducts workspace credits) and connect it to an agent for
 // inbound calls — the platform-number flow. Needs numbers:read / numbers:write.
 import { createInterface } from "node:readline/promises";
@@ -18,6 +18,16 @@ async function confirm(question) {
   const a = (await rl.question(question + " [y/N] ")).trim().toLowerCase();
   rl.close();
   return a === "y" || a === "yes";
+}
+
+/**
+ * The first candidate a search answered with — the one `provision` buys.
+ * Pure — exported for tests.
+ */
+export function firstCandidate(res) {
+  const nums = Array.isArray(res) ? res : res?.numbers || [];
+  const n = nums[0];
+  return n ? n.phone_number || n.phoneNumber || null : null;
 }
 
 const numRow = (n) => [n.id, n.phone_number, n.agent_id ? trunc(n.agent_id, 14) : dim("—"), n.friendly_name || ""];
@@ -71,6 +81,36 @@ export async function run(sub, args, flags) {
     return;
   }
 
+  if (sub === "provision") {
+    // search → buy the first match → (optionally) route it to an agent, in one
+    // go. The purchase is the part that costs money, so it keeps the same
+    // confirmation `buy` has.
+    const body = {
+      country: (flags.country || "US").toUpperCase(),
+      area_code: flags["area-code"] || flags.area,
+      contains: flags.contains,
+      limit: 1,
+    };
+    const found = await post(EP.numbers.search(org), body);
+    const phone = firstCandidate(found);
+    if (!phone) fatal(`No numbers available for ${body.country}${body.area_code ? ` area ${body.area_code}` : ""}${body.contains ? ` containing ${body.contains}` : ""}.`);
+    if (!flags.yes && !(await confirm(`Buy ${bold(phone)}? This deducts credits from your workspace wallet.`))) {
+      return out(dim("Cancelled."));
+    }
+    const bought = await post(EP.numbers.purchase(org), { phone_number: phone, friendly_name: flags.label });
+    let assigned = null;
+    if (typeof flags.agent === "string" && flags.agent) {
+      const numberId = bought?.number?.id || bought?.id;
+      if (numberId) {
+        assigned = await put(EP.numbers.inboundNumber(org, flags.agent), { number_id: numberId, source: bought?.number?.source || "platform" });
+      }
+    }
+    if (flags.json) return printJson({ phone_number: phone, purchase: bought, ...(flags.agent ? { agent_id: flags.agent, assigned: assigned ?? false } : {}) });
+    ok(`Provisioned ${phone}` + (bought?.number?.id ? ` (${bought.number.id})` : ""));
+    if (flags.agent) out(assigned ? `  routed inbound → agent ${flags.agent}` : dim(`  could not route it (no number id returned) — whissle numbers assign <number-id> --agent ${flags.agent}`));
+    return;
+  }
+
   if (sub === "claim") {
     const id = args[0] || fatal("Usage: whissle numbers claim <number-id>   (ids from `whissle numbers available`)");
     const res = await post(EP.numbers.claim(org, id), {});
@@ -81,9 +121,9 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  if (sub === "connect") {
+  if (sub === "connect" || sub === "assign") {
     // Bind a number to an agent for inbound. Accept a phone number OR an id.
-    const ref = args[0] || fatal("Usage: whissle numbers connect <+1… | number-id> --agent <agent-id>");
+    const ref = args[0] || fatal(`Usage: whissle numbers ${sub} <+1… | number-id> --agent <agent-id>`);
     if (!flags.agent) fatal("--agent <agent-id> is required.");
     const nums = await get(EP.numbers.free(org));
     const match = (nums || []).find((n) => n.id === ref || n.phone_number === ref);
@@ -102,5 +142,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: numbers ${sub}. Try list | available | search | buy | claim | connect | release.`);
+  fatal(`Unknown: numbers ${sub}. Try list | available | search | buy | provision | claim | connect | assign | release.`);
 }

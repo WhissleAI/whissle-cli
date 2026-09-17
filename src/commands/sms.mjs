@@ -1,14 +1,36 @@
-// whissle sms — SMS delivery log + consent management (org-scoped /api/orgs/{org}/sms).
+// whissle sms — send one message, plus the delivery log + consent paper trail
+// (org-scoped /api/orgs/{org}/sms).
 //
-// Read-only auditing plus opt-out control. There is NO send-SMS command — SMS goes
-// out through agents (post-call automation, reminders). This surface is for the
-// A2P/consent paper trail: the delivery log, suppressed numbers, and consent records.
-import { get, del, resolveOrgId } from "../api.mjs";
+// `send` posts a real text message and bills for it; the rest is auditing and
+// opt-out control — the delivery log, suppressed numbers, and consent records.
+// Agents still send most SMS themselves (post-call automation, reminders).
+import { get, del, post, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
 import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
 
+/** The send body from flags. Pure — exported for tests. */
+export function sendBody(flags) {
+  const to = typeof flags.to === "string" ? flags.to : "";
+  const body = typeof flags.body === "string" ? flags.body : typeof flags.message === "string" ? flags.message : "";
+  if (!to || !body) fatal('Usage: whissle sms send --to <+1…> --body "…" [--from <+1…>] [--agent <agent-id>]');
+  return {
+    to_number: to,
+    body,
+    ...(typeof flags.from === "string" && flags.from ? { from_number: flags.from } : {}),
+    ...(typeof flags.agent === "string" && flags.agent ? { agent_id: flags.agent } : {}),
+  };
+}
+
 export async function run(sub, args, flags) {
   const org = await resolveOrgId();
+
+  if (sub === "send") {
+    const body = sendBody(flags);
+    const r = await post(EP.sms.send(org), body);
+    if (flags.json) return printMutation(r, { sent: true, ...body });
+    ok(`Sent to ${body.to_number}` + (r?.id || r?.message_id ? dim(`  (${r.id || r.message_id})`) : "") + (r?.status ? dim(`  ${r.status}`) : ""));
+    return;
+  }
 
   if (!sub || sub === "messages") {
     const rows = await get(EP.sms.messages(org), { query: { limit: flags.limit } });
@@ -60,5 +82,5 @@ export async function run(sub, args, flags) {
     return;
   }
 
-  fatal(`Unknown: sms ${sub}. Try messages | opt-outs | consents | opt-in.`);
+  fatal(`Unknown: sms ${sub}. Try send | messages | opt-outs | consents | opt-in.`);
 }
