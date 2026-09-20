@@ -53,9 +53,15 @@ export function flagsRead(src) {
   return found;
 }
 
-/** `--flag` tokens on a documented `whissle <group> …` line. */
+/**
+ * `--flag` tokens on a documented `whissle <group> …` line.
+ *
+ * Markdown link TARGETS are stripped first: a cross-reference like
+ * [`whissle listen`](#listen--see-sessionswrite) is prose pointing at an
+ * anchor, and its slug's double hyphen is not a flag.
+ */
 export function documentedFlags(line) {
-  const plain = line.replace(/\x1b\[[0-9;]*m/g, "");
+  const plain = line.replace(/\x1b\[[0-9;]*m/g, "").replace(/\]\([^)]*\)/g, "]");
   const m = /whissle ([a-z]+)\b(.*)$/.exec(plain);
   if (!m) return null;
   return { group: m[1], flags: [...m[2].matchAll(/--([a-z][a-z0-9-]*)/g)].map((f) => f[1]) };
@@ -138,4 +144,10 @@ test("a documented line yields its group and its flags", () => {
     flags: ["language", "diarize"],
   });
   assert.equal(documentedFlags("nothing to see here"), null);
+  // A markdown cross-reference is prose, not an invocation: the anchor slug
+  // `#listen--see-sessionswrite` must not read as a flag called --see-….
+  assert.deepEqual(documentedFlags("as [`whissle listen`](#listen--see-sessionswrite) does"), {
+    group: "listen",
+    flags: [],
+  });
 });

@@ -31,8 +31,11 @@ npm i -g @whissle/cli
 whissle version
 ```
 
-`main` in this repo runs ahead of the published release, so if you want what this
-README documents before the next publish, install from git:
+`main` in this repo runs **two releases** ahead of npm, which is still on
+**1.4.0**. Everything 1.5.0 and 1.6.0 added — `listen`, `vision`, `webhooks`,
+`kb sync`, `chat turn --schema/--cite`, and the whole `asr` group plus
+`models transcribe --engine` — is documented here and **not installable from
+npm yet**. Until the next publish, install from git:
 
 ```bash
 npm i -g github:WhissleAI/whissle-cli
@@ -199,6 +202,12 @@ finished listen session shows its `end_reason` and **delivery** (style, pace).
 `vision ask` answers in a few words; when the model says nothing is clearly
 visible the CLI says *(nothing clearly visible)* rather than dressing that up.
 Priced as a vision call. In `vision batch`, `image` may be a path or a data URL.
+
+> **`listen` is not `asr stream`.** A listen session puts an **agent** in a
+> LiveKit room to hear a conversation and report on it. If what you want is the
+> raw speech socket — PCM in, transcript out, no agent — that is
+> [`whissle asr stream`](#speech-engine-direct-modelsinvoke), and it takes
+> `models:invoke` rather than `sessions:write`.
 
 ### Your companion (`companion:invoke`)
 
@@ -767,28 +776,122 @@ scoring script, etc.).
 
 ### Transcription (pre-recorded calls & meetings)
 
-Turn a recorded call or meeting into text — you pick the **language**, the
-platform picks the engine (the model/provider is pre-configured and never
-exposed). Speaker turns come from Whissle's own diarization.
+Turn a recorded call or meeting into text. You pick the **language**; since
+1.6.0 you may also name the **engine**. Speaker turns come from Whissle's own
+diarization.
 
 ```bash
 whissle models transcribe call.wav                       # defaults to English
-whissle models transcribe call.mp3 --language en         # English
 whissle models transcribe call.mp3 --language hi         # Hindi (Devanagari)
-whissle models transcribe call.mp3 --language te         # Telugu
 whissle models transcribe call.mp3 --language hinglish   # Hindi–English code-mixed
-whissle models transcribe call.mp3 --language tenglish   # Telugu–English code-mixed
 whissle models transcribe call.wav --language en --diarize --json   # speaker-tagged segments
+whissle models transcribe call.wav --engine whissle      # Whissle's own model, with metadata
 ```
 
 | flag | values | default |
 |---|---|---|
 | `--language` | `en` · `hi` · `te` · `hinglish` · `tenglish` | `en` |
 | `--diarize` | (bool) tag speaker turns | off |
-| `--json` | full `{text, segments[], duration_seconds, cost_usd}` | table |
+| `--engine` | `whissle` · `deepgram` · `sarvam` | chosen from `--language` |
+| `--json` | the whole payload | table |
+
+**`--engine whissle` is the one that returns metadata.** Whissle's own model
+runs a parallel metadata head, so the response carries a `metadata` block
+(emotion, intent, age, gender, role, … with confidences) beside the words. The
+other two are third-party engines that return text and nothing else. Omit
+`--engine` and the platform picks from the language exactly as it always has —
+a 1.5.0 invocation sends byte-identical bytes.
+
+**The platform degrades rather than failing.** Ask for an engine this
+deployment cannot reach and you get a perfectly ordinary-looking transcript
+from a different one, plus a `warnings` entry saying so. The CLI prints those
+warnings **first, on stderr, before the text**, and the footer names the
+`engine` that actually **ran** — which is the point: a transcript that quietly
+changed provenance looks exactly like one that did not.
+
+```
+! Engine 'whissle' was requested but whissle-large is not reachable from this
+  deployment; transcribed on 'deepgram' instead. The transcript is third-party
+  text and carries no Whissle acoustic metadata.
+```
+
+`--json` gives you the payload as the gateway sent it: `text`, `segments[]`,
+`duration_seconds`, `diarized`, `cost_usd`, plus `engine` (only when you named
+one), `metadata` (only when the metadata head produced something) and
+`warnings` (only when there are any).
 
 Common audio containers work (wav, mp3, m4a, flac). Billed per second of audio
 against your workspace wallet (`whissle usage`).
+
+### Speech engine, direct (`models:invoke`)
+
+`models transcribe` is the à-la-carte door: a file in, a transcript out.
+`whissle asr` is the engine **itself** — the streaming socket Whissle's own
+voice pipeline runs on, reachable with your own `wsk_` key carrying
+`models:invoke`.
+
+```bash
+whissle asr status                                       # engine, models, device
+whissle asr stream call.wav                              # finals, with metadata tags inline
+whissle asr stream call.wav --metadata emotion,intent,entity --partials
+whissle asr stream call.wav --json | jq -r 'select(.is_final) | .text'
+ffmpeg -i call.mp3 -f s16le -ar 16000 -ac 1 - | whissle asr stream -
+```
+
+> **This is not the same feature as [`whissle listen`](#listen--see-sessionswrite).**
+> `listen` puts an **agent** in a LiveKit room to hear a conversation and
+> report on it. `asr stream` is the raw speech socket: PCM in, transcript out,
+> no agent anywhere. The gateway happens to serve the socket at `/listen` as
+> well as `/asr/stream` (they relay to the same upstream), which is where the
+> confusion comes from.
+
+**It does not open your microphone, on purpose.** Node has no microphone;
+capturing one means a native addon or a hard dependency on a sound stack being
+installed, and a control-plane CLI that fails at `npm i -g` on a machine
+without one is worse than a CLI that never claimed to record. So this command
+owns the protocol and you own the audio — pipe in whatever you already have:
+
+```bash
+ffmpeg -f avfoundation -i :0 -f s16le -ar 16000 -ac 1 - | whissle asr stream -   # macOS mic
+arecord -f S16_LE -r 16000 -c 1 -t raw          | whissle asr stream -           # Linux mic
+```
+
+For a **browser** microphone, that is the [`@whissle/agents`](https://www.npmjs.com/package/@whissle/agents)
+SDK's job, not this one.
+
+| flag | what it does |
+|---|---|
+| `--language xx` | ask the engine for a language; omit it and it decides |
+| `--metadata a,b` \| `none` | which metadata heads to ask for (default `emotion,intent,entity`) |
+| `--partials` | print interim transcripts too, not just finals |
+| `--word-timestamps` | ask for per-word timings |
+| `--hotwords "Acme Corp,SKU-42"` | bias the decoder toward names it would otherwise miss |
+| `--sample-rate N` | for headerless PCM; a WAV's own rate always wins |
+| `--realtime` | pace the send at 1×, to watch it like a live session |
+| `--json` | NDJSON of every event exactly as the engine sent it |
+
+Audio is **signed 16-bit little-endian PCM, mono**. A mono 16-bit WAV is read
+directly; any other layout is refused with the `ffmpeg` line rather than
+reinterpreted — feeding the socket a stereo or 24-bit body produces confident
+garbage, not an error.
+
+> **Billing: the socket is metered per second it is OPEN** — wall clock on the
+> gateway relay, not the duration of the audio you pushed through it. An idle
+> open socket still bills your workspace. That is why the default sends as fast
+> as the socket will take it and closes the moment the input ends.
+
+**Metadata is a request, not a promise.** `--metadata` names the heads you want;
+whether a tag comes back depends on which model this deployment loaded, and the
+smallest English model has no metadata head at all. A tag the model cannot serve
+is simply **absent** from the events — no error. And `asr status` will not tell
+you in advance: it reports models, decoder, vocabulary, LM languages and device,
+and nothing about classifier heads. **Never promise a customer emotion scores
+without having seen them come back from the deployment you are on.**
+
+Speech **translation** (`/asr/translate`) and speech-to-speech (`/asr/s2s`) are
+deliberately **not** reachable with a workspace key. They compose speech with a
+language model, and those legs have no per-second entry in the price book — so a
+`wsk_` there would be an unbilled door. That is a deliberate limit, not a gap.
 
 ## Scopes
 
@@ -823,7 +926,7 @@ didn't exist when it was made.
 | **team** (invitations) | `team:read` / `team:write` *(write = escalation)* |
 | **meetings** | `meetings:read` / `meetings:write` |
 | **memory** | `memory:read` / `memory:write` |
-| models | `models:invoke` |
+| models, **`asr`** (the speech engine + its stream) | `models:invoke` |
 | usage (the wallet) | `billing:read` |
 | **usage summary/events/sessions/export**, **usage --by** | `usage:read` |
 | **voices, reports, simulations, alerts** | any valid key — the key resolves the org *(alert-rule writes need an owner/admin key)* |
