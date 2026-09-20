@@ -868,12 +868,16 @@ SDK's job, not this one.
 | `--hotwords "Acme Corp,SKU-42"` | bias the decoder toward names it would otherwise miss |
 | `--sample-rate N` | for headerless PCM; a WAV's own rate always wins |
 | `--realtime` | pace the send at 1×, to watch it like a live session |
+| `--chunk-ms N` | audio per frame (default 100) |
+| `--flush-timeout N` | seconds to wait for the engine's last words after `end` (default 15) |
 | `--json` | NDJSON of every event exactly as the engine sent it |
 
 Audio is **signed 16-bit little-endian PCM, mono**. A mono 16-bit WAV is read
 directly; any other layout is refused with the `ffmpeg` line rather than
 reinterpreted — feeding the socket a stereo or 24-bit body produces confident
-garbage, not an error.
+garbage, not an error. The input is buffered in memory, so for a long
+**recording** the batch door (`models transcribe --engine whissle`) is the
+right tool; this one is for a stream.
 
 > **Billing: the socket is metered per second it is OPEN** — wall clock on the
 > gateway relay, not the duration of the audio you pushed through it. An idle

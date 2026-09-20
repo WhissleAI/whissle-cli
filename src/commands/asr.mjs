@@ -148,6 +148,9 @@ export function* frames(buf, bytes) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Let at most this much audio sit unsent in the socket's buffer (1 MiB ≈ 32s). */
+const SEND_HIGH_WATER = 1 << 20;
+
 /** Everything on stdin, as one buffer. */
 async function readStdin() {
   const chunks = [];
@@ -249,6 +252,11 @@ async function runStream(args, flags) {
       if (ws.readyState !== 1) break;
       ws.send(chunk);
       if (flags.realtime) await sleep(chunkMs);
+      // Backpressure. `send` buffers, so an un-paced send of a long file would
+      // queue the whole thing in memory and hand the engine a burst it has to
+      // sit on — both of which cost more wall clock on a socket billed by the
+      // second than waiting a few milliseconds here does.
+      while (ws.bufferedAmount > SEND_HIGH_WATER && ws.readyState === 1) await sleep(5);
     }
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: "end" }));
   }
