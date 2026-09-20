@@ -2,7 +2,51 @@
 import { writeFileSync } from "node:fs";
 import { get, post, upload, raw } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, md, table, dim, printJson, fatal } from "../ui.mjs";
+import { out, ok, md, table, dim, warn, printJson, fatal } from "../ui.mjs";
+
+/**
+ * The speech engines `--engine` may name (routes/models.py `_ENGINES`).
+ *
+ * `whissle` is Whissle's own model: it is the only one that also produces
+ * ACOUSTIC METADATA (emotion, intent, age, gender, …) alongside the words, which
+ * is the whole reason to ask for it by name. The other two are third parties
+ * that return text and nothing else.
+ */
+export const ENGINES = ["deepgram", "sarvam", "whissle"];
+
+/**
+ * The `engine` form field from `--engine`, or `undefined` to let the platform
+ * pick from the language (the behaviour every pre-1.6 caller got).
+ *
+ * Validated here rather than at the server so a typo costs a round-trip and not
+ * an upload. Pure — exported for tests.
+ */
+export function engineField(flags) {
+  if (flags.engine === undefined) return undefined;
+  const asked = String(flags.engine).trim().toLowerCase();
+  if (!ENGINES.includes(asked)) {
+    fatal(`--engine must be one of ${ENGINES.join(" | ")} (got "${flags.engine}"). Omit it to let the platform pick from --language.`);
+  }
+  return asked;
+}
+
+/**
+ * The one-line footer under a transcript.
+ *
+ * `engine` is only in the response when the caller NAMED one, and it is the
+ * engine that actually RAN — which is not always the one asked for. Pure —
+ * exported for tests.
+ */
+export function transcribeFooter(r) {
+  const bits = [`${r.duration_seconds ?? "?"}s`, `$${r.cost_usd ?? "?"}`];
+  if (Array.isArray(r.segments)) bits.push(`${r.segments.length} segment(s)`);
+  if (r.engine) bits.push(`engine: ${r.engine}`);
+  if (r.metadata && typeof r.metadata === "object") {
+    const tags = Object.keys(r.metadata).filter((k) => !k.endsWith("_confidence") && k !== "probs");
+    if (tags.length) bits.push(`metadata: ${tags.join(", ")}`);
+  }
+  return bits.join(" · ");
+}
 
 export async function run(sub, args, flags) {
   if (sub === "voices") {
@@ -51,18 +95,25 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "transcribe") {
-    // Transcribe a pre-recorded file (calls, meetings). You pick the LANGUAGE;
-    // the platform picks the engine — the model/provider is never exposed.
+    // Transcribe a pre-recorded file (calls, meetings). You pick the LANGUAGE,
+    // and — since 1.6.0 — you may also name the ENGINE. Omit `--engine` and the
+    // platform still picks one from the language, exactly as it always did.
     const file = args[0] || fatal(
-      "Usage: whissle models transcribe <audio-file> [--language en|hi|te|hinglish|tenglish] [--diarize]");
+      "Usage: whissle models transcribe <audio-file> [--language en|hi|te|hinglish|tenglish] [--diarize] [--engine whissle|deepgram|sarvam]");
+    const engine = engineField(flags);
     const r = await upload(EP.models.transcribe, {
       filePath: file,
-      fields: { language: flags.language || "", diarize: flags.diarize ? "true" : "false" },
+      fields: { language: flags.language || "", diarize: flags.diarize ? "true" : "false", ...(engine ? { engine } : {}) },
     });
     if (flags.json) return printJson(r);
+    // Warnings FIRST and on stderr: the platform degrades rather than failing,
+    // so a transcript that came from a different engine than you asked for
+    // still arrives looking perfectly fine. Printing that after the text (or
+    // not at all) is how someone ends up believing a Deepgram transcript
+    // carries Whissle metadata.
+    for (const w of Array.isArray(r.warnings) ? r.warnings : []) warn(w);
     out(md(r.text));
-    out(dim(`\n  ${r.duration_seconds ?? "?"}s · $${r.cost_usd ?? "?"}` +
-      (Array.isArray(r.segments) ? ` · ${r.segments.length} segment(s)` : "")));
+    out(dim(`\n  ${transcribeFooter(r)}`));
     return;
   }
 

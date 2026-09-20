@@ -31,6 +31,7 @@ const GROUPS = {
   integrations: () => import("../src/commands/integrations.mjs"),
   embed: () => import("../src/commands/embed.mjs"),
   models: () => import("../src/commands/models.mjs"),
+  asr: () => import("../src/commands/asr.mjs"),
   keys: () => import("../src/commands/keys.mjs"),
   team: () => import("../src/commands/team.mjs"),
   sso: () => import("../src/commands/sso.mjs"),
@@ -135,6 +136,7 @@ ${bold("Run an agent")}
 ${bold("Listen & see")}  ${dim("(needs sessions:write)")}  ${dim("— the agent's ear with no mouth, and its eyes")}
   whissle listen start <agent-id> [--language en] [--metadata]   open a listen room → {url, token, room, session_id}
   whissle listen tail <session-id> [--interval 2] [--once]   follow its transcript + signals (emotion, wpm, entities)
+  ${dim("(an AGENT listening in a room — NOT the raw speech socket; that is `whissle asr stream`)")}
   whissle vision ask <agent-id> <image> "what is this?" [--hint …] [--max-words 40]
   whissle vision batch <agent-id> --file items.json [--concurrency 2]   ≤ 40 {id, image, question} items
 
@@ -309,8 +311,21 @@ ${bold("Channels — one agent, everywhere")}
 ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
   whissle models chat "prompt" [--system …] [--fast]
   whissle models tts "text" [--voice …] --out speech.mp3
-  whissle models transcribe audio.wav [--language xx] [--diarize]
+  whissle models transcribe audio.wav [--language xx] [--diarize] [--engine whissle|deepgram|sarvam]
+                      ${dim("(--engine whissle is the only one that returns acoustic metadata; the")}
+                      ${dim(" platform DEGRADES with a `warnings` line rather than failing, and the")}
+                      ${dim(" `engine` it reports is the one that actually ran)")}
   whissle models voices               voice ids for --voice (grouped by engine)
+
+${bold("Speech engine, direct")}  ${dim("(needs models:invoke)")}  ${dim("— words + acoustic metadata, no agent")}
+  whissle asr status                  is the engine up, which models + device
+  whissle asr stream <file.wav|-> [--language en] [--metadata emotion,intent|none]
+                      [--sample-rate 16000] [--realtime] [--partials] [--word-timestamps]
+                      ${dim("s16le mono PCM in (a mono 16-bit WAV is read directly), JSON")}
+                      ${dim("transcript events out. It does NOT open your microphone — pipe")}
+                      ${dim("your own: ffmpeg -i in.mp3 -f s16le -ar 16000 -ac 1 - | whissle asr stream -")}
+                      ${dim("BILLED per second the socket is OPEN, not per second of audio.")}
+  ${dim("(different feature from `whissle listen`, which puts an AGENT in a room to listen)")}
 
 ${bold("Billing & usage")}
   whissle usage                       wallet balance + recent ledger

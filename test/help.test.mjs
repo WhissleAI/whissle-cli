@@ -14,7 +14,7 @@ const GROUPS = [
   "connectors", "numbers", "integrations", "embed", "models", "keys", "team",
   "sso", "audit",
   "customers", "appointments", "sms", "analytics", "campaigns", "meetings",
-  "memory", "usage", "config",
+  "memory", "usage", "config", "asr",
 ];
 
 test("every dispatchable group has help of its own", () => {

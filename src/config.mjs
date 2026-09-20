@@ -70,5 +70,41 @@ export function loadConfig() {
   };
 }
 
+/**
+ * The gateway ORIGIN — `baseUrl` with the `/bot` platform prefix taken off.
+ *
+ * Almost everything this CLI calls lives under `/bot`, which is why `baseUrl`
+ * carries it. The speech engine does not: `/asr/status`, `/asr/transcribe` and
+ * the `/listen` + `/asr/stream` sockets are served by the GATEWAY itself, one
+ * level above the platform API, so they are `https://host/asr/…` and never
+ * `https://host/bot/asr/…`. Deriving the origin from the configured base URL
+ * (rather than hard-coding a second host) is what keeps `--base-url` and a
+ * self-hosted install working for speech as well as for the platform.
+ *
+ * Pure — exported for tests.
+ */
+export function gatewayRoot(baseUrl = loadConfig().baseUrl) {
+  return String(baseUrl).replace(/\/+$/, "").replace(/\/bot$/, "");
+}
+
+/**
+ * The streaming-ASR WebSocket URL, token and all.
+ *
+ * The token rides as a QUERY PARAMETER, not a header — a browser cannot set
+ * headers on a WebSocket, so the gateway authenticates the socket off `?token=`
+ * and every client (this one included) speaks the same dialect. That also means
+ * the URL is a credential: it is never printed except under `--json`, and never
+ * to a log.
+ *
+ * `/listen` and `/asr/stream` relay to the same upstream — they differ only in
+ * the label the gateway meters them under. Pure — exported for tests.
+ */
+export function asrStreamUrl(token, { baseUrl = loadConfig().baseUrl, path = "/asr/stream" } = {}) {
+  const url = new URL(gatewayRoot(baseUrl) + path);
+  url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
 export const configPath = FILE;
 export const configExists = () => existsSync(FILE);
