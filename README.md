@@ -654,7 +654,7 @@ server-side. Agents still send most SMS themselves during and after calls.
 
 ### Analytics
 ```bash
-whissle analytics query [--agent <id>] [--metric …] [--group-by …] [--days 7] [--start …] [--end …]
+whissle analytics query [--agent <id>] [--metric …] [--group-by …] [--days 7] [--since …] [--until …]
 whissle analytics options                         # available metrics/dimensions
 whissle analytics charts                          # saved charts
 ```
@@ -731,7 +731,7 @@ whissle memory delete <id>
 
 ### Workspace — keys, team, billing, models
 ```bash
-whissle keys list | create --name "ci" --scopes a,b,c [--type secret|publishable] | reveal <id> | delete <id>
+whissle keys list | create --name "ci" --scopes a,b,c [--publishable] [--origins https://site.com] | reveal <id> | delete <id>
 whissle team list | invite --email person@co.com --role owner|admin|member | revoke <id>
 whissle usage                                     # the MONEY view: wallet balance + ledger
 whissle usage summary [--days 30] [--channel voice]   # the METERING view: totals per service + per-day
