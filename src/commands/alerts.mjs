@@ -16,7 +16,7 @@ const when = (s) => (s || "").slice(0, 16).replace("T", " ");
 
 // --flag → rule field. Mirrors RuleBody/RulePatch in the backend (routes/alerts.py).
 // Booleans accept an explicit true/false value or a bare flag (= true).
-const RULE_FLAGS = {
+export const RULE_FLAGS = {
   name: ["name", "str"],
   metric: ["metric", "str"],
   comparator: ["comparator", "str"],
@@ -29,12 +29,23 @@ const RULE_FLAGS = {
   "notify-email": ["notify_email", "bool"],
   // Contract kinds (balance_below_usd, p95_ms_over): a rule that fires the
   // matching webhook event (balance.threshold / latency.threshold) rather than
-  // measuring a call metric. `--door` names which door's p95; `--webhook`
-  // targets one registered webhook.
+  // measuring a call metric. `--door` names which door's p95. There is no way
+  // to target ONE webhook: a firing calls `webhooks.emit(org, event, …)`
+  // (services/alerts.py `_emit_event`), which fans out to every endpoint in
+  // the workspace subscribed to that event.
   kind: ["kind", "str"],
   door: ["door", "str"],
-  webhook: ["webhook_id", "str"],
 };
+
+/**
+ * Fields `RuleBody` accepts on create but `RulePatch` does not (routes/alerts.py).
+ *
+ * A contract-kind rule can be created and then never edited on the two fields
+ * that make it one: a PUT carrying `kind` or `door` has them dropped by
+ * pydantic and answers 200 with the rule unchanged, which reads exactly like a
+ * successful edit. Refusing here, with the remedy, is the honest version.
+ */
+export const CREATE_ONLY_FIELDS = ["kind", "door"];
 
 /** The rule kinds the contract adds on top of metric thresholds. */
 export const ALERT_KINDS = ["balance_below_usd", "p95_ms_over"];
@@ -112,6 +123,13 @@ async function runRules(verb, args, flags) {
   if (verb === "update") {
     const id = args[0] || fatal("Usage: whissle alerts rules update <rule-id> [--flags]\n" + RULES_USAGE);
     const body = ruleBody(flags);
+    const createOnly = CREATE_ONLY_FIELDS.filter((f) => body[f] !== undefined);
+    if (createOnly.length) {
+      fatal(
+        `alert rules cannot be patched on ${createOnly.map((f) => "--" + f).join(" / ")} — the update route does not accept ${createOnly.join(" / ")}.\n` +
+          "  Delete the rule and create it again: whissle alerts rules delete <id> && whissle alerts create --kind … --threshold …",
+      );
+    }
     if (!Object.keys(body).length) fatal("Nothing to update — pass at least one rule flag.\n" + RULES_USAGE);
     const r = await put(EP.alerts.rule(id), body);
     if (flags.json) return printJson(r);

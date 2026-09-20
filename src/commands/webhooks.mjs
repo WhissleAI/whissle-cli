@@ -29,25 +29,47 @@ export const SIGNATURE_SCHEME = 'X-Whissle-Signature: t=<unix>,v1=hex(hmac-sha25
 
 /**
  * The create body from flags. `--events` is comma-separated (or repeated);
- * unknown kinds are refused HERE with the list, rather than as a 422 that
- * says only "invalid events". Pure — exported for tests.
+ * unknown kinds are refused HERE with the list, rather than as a 422 that says
+ * only "invalid events".
+ *
+ * `known` is the vocabulary to check against — the caller passes the LIVE one
+ * from GET /api/webhooks/events when it can reach it, and the built-in list is
+ * only the offline fallback. Validating against a hard-coded array alone is how
+ * a CLI ends up unable to subscribe to an event the platform already emits.
+ *
+ * Pure — exported for tests.
  */
-export function webhookBody(flags) {
+export function webhookBody(flags, known = EVENT_KINDS.map(([k]) => k)) {
   const url = typeof flags.url === "string" ? flags.url : "";
   if (!/^https?:\/\//.test(url)) fatal("--url must be an http(s) URL.");
   const events = [].concat(flags.events || flags.event || [])
     .flatMap((v) => String(v).split(","))
     .map((v) => v.trim())
     .filter(Boolean);
-  if (!events.length) fatal(`--events is required, e.g. --events session.ended,tool.held  (kinds: ${EVENT_KINDS.map(([k]) => k).join(", ")})`);
-  const known = new Set(EVENT_KINDS.map(([k]) => k));
-  const bad = events.filter((e) => !known.has(e));
-  if (bad.length) fatal(`Unknown event kind(s): ${bad.join(", ")}. Valid: ${[...known].join(", ")}`);
+  const vocabulary = new Set(known);
+  if (!events.length) fatal(`--events is required, e.g. --events session.ended,tool.held  (kinds: ${[...vocabulary].join(", ")})`);
+  const bad = events.filter((e) => !vocabulary.has(e));
+  if (bad.length) fatal(`Unknown event kind(s): ${bad.join(", ")}. Valid: ${[...vocabulary].join(", ")}`);
   return {
     url,
     events,
     ...(typeof flags.secret === "string" && flags.secret ? { secret: flags.secret } : {}),
   };
+}
+
+/**
+ * The event kinds the gateway will accept right now, or the built-in list when
+ * it cannot be reached (no key, no network, an older gateway). Never throws —
+ * a vocabulary lookup must not be the thing that fails a create.
+ */
+async function liveVocabulary() {
+  try {
+    const r = await get(EP.webhooks.events);
+    if (Array.isArray(r?.events) && r.events.length) return r.events;
+  } catch {
+    /* fall through to what we know */
+  }
+  return EVENT_KINDS.map(([k]) => k);
 }
 
 const hookRow = (w) => [
@@ -69,15 +91,33 @@ export async function run(sub, args, flags) {
   }
 
   if (sub === "events") {
-    // Network-free: the vocabulary, so a script can be written against it offline.
-    if (flags.json) return printJson(EVENT_KINDS.map(([kind, description]) => ({ kind, description })));
-    table(["EVENT", "WHEN"], EVENT_KINDS);
-    out(dim(`\n  body: {id, type, created_at, organization_id, data}\n  ${SIGNATURE_SCHEME}`));
+    // The gateway serves the vocabulary (GET /api/webhooks/events, from the
+    // same tuple the emitters use), so ASK it — the built-in list below is only
+    // a fallback for an offline run, and the moment the platform adds an event
+    // a hard-coded list is a CLI that cannot subscribe to it. `--offline` is
+    // the escape hatch for a script that must not touch the network.
+    let kinds = EVENT_KINDS, live = null;
+    if (!flags.offline) {
+      try {
+        live = await get(EP.webhooks.events);
+      } catch {
+        /* no key, no route, no network — fall back to what we know */
+      }
+    }
+    if (Array.isArray(live?.events) && live.events.length) {
+      const described = new Map(EVENT_KINDS);
+      kinds = live.events.map((k) => [k, described.get(k) || dim("(new — see the docs)")]);
+      if (live.test_event) kinds.push([live.test_event, "what `webhooks test <id>` sends; always deliverable"]);
+    }
+    if (flags.json) return printJson(kinds.map(([kind, description]) => ({ kind, description })));
+    table(["EVENT", "WHEN"], kinds);
+    out(dim(`\n  ${live ? "live from the gateway" : "built-in list (offline)"}`));
+    out(dim(`  body: {id, type, created_at, organization_id, data}\n  ${SIGNATURE_SCHEME}`));
     return;
   }
 
   if (sub === "create") {
-    const body = webhookBody(flags);
+    const body = webhookBody(flags, await liveVocabulary());
     const r = await post(EP.webhooks.create, body);
     if (flags.json) return printJson(r);
     ok(`Created webhook ${r.id} → ${body.url}`);

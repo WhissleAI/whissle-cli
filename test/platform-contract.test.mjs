@@ -329,8 +329,13 @@ test("webhooks --help is its own slice", () => {
 // ── alerts kinds ─────────────────────────────────────────────────────────────
 
 test("alerts create --kind builds a kind-rule with a default name and comparator", () => {
-  const { flags } = parse(["create", "--kind", "balance_below_usd", "--threshold", "20", "--webhook", "w1"]);
-  assert.deepEqual(kindRuleBody(flags), { kind: "balance_below_usd", threshold: 20, webhook_id: "w1", name: "Balance below $20", comparator: "below" });
+  const { flags } = parse(["create", "--kind", "balance_below_usd", "--threshold", "20"]);
+  assert.deepEqual(kindRuleBody(flags), { kind: "balance_below_usd", threshold: 20, name: "Balance below $20", comparator: "below" });
+  // No `webhook_id`: nothing in routes/alerts.py reads one, and a firing calls
+  // webhooks.emit(org, event, …) — it fans out to every endpoint subscribed to
+  // the event. `--webhook w1` used to be sent, dropped by pydantic, and read
+  // by the caller as a rule targeted at one endpoint.
+  assert.deepEqual(kindRuleBody(parse(["create", "--kind", "balance_below_usd", "--threshold", "20", "--webhook", "w1"]).flags), { kind: "balance_below_usd", threshold: 20, name: "Balance below $20", comparator: "below" });
   const p95 = kindRuleBody(parse(["create", "--kind", "p95_ms_over", "--door", "chat_turn", "--threshold", "1500", "--name", "slow"]).flags);
   assert.deepEqual(p95, { kind: "p95_ms_over", door: "chat_turn", threshold: 1500, name: "slow", comparator: "above" });
   assert.throws(() => exits(() => kindRuleBody({ kind: "p95_ms_over", threshold: "1" })), /exit 1/); // no --door
@@ -351,9 +356,14 @@ test("bulk-approve resolves --ids or every pending id, and the idempotency key i
   assert.deepEqual(decisionHeaders({}), { "Idempotency-Key": undefined });
 });
 
-test("sms send uses the gateway's field names", () => {
-  assert.deepEqual(sendBody({ to: "+15551234567", body: "hi", from: "+15550000000", agent: "a1" }), { to_number: "+15551234567", body: "hi", from_number: "+15550000000", agent_id: "a1" });
+test("sms send uses the gateway's field names, and sends no field it does not have", () => {
+  assert.deepEqual(sendBody({ to: "+15551234567", body: "hi", agent: "a1" }), { to_number: "+15551234567", body: "hi", agent_id: "a1" });
   assert.deepEqual(Object.keys(sendBody({ to: "+1", body: "b" })), ["to_number", "body"]);
+  // `SmsSendBody` (routes/sms.py) is to_number + body + agent_id. A
+  // `from_number` was dropped by pydantic without a word, so the text went out
+  // from whatever resolve_outbound picked — a different sender than the one the
+  // caller named, silently. The command now warns and sends only the three.
+  assert.deepEqual(sendBody({ to: "+1", body: "b", from: "+15550000000" }), { to_number: "+1", body: "b" });
   assert.throws(() => exits(() => sendBody({ to: "+1" })), /exit 1/);
 });
 

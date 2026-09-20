@@ -6,17 +6,26 @@
 // Agents still send most SMS themselves (post-call automation, reminders).
 import { get, del, post, resolveOrgId } from "../api.mjs";
 import { EP } from "../endpoints.mjs";
-import { out, ok, table, trunc, dim, printJson, printMutation, fatal } from "../ui.mjs";
+import { out, ok, table, trunc, dim, warn, printJson, printMutation, fatal } from "../ui.mjs";
 
-/** The send body from flags. Pure — exported for tests. */
+/**
+ * The send body from flags. Pure — exported for tests.
+ *
+ * There is no `from_number`. `SmsSendBody` (routes/sms.py) declares exactly
+ * `to_number`, `body` and `agent_id`, so a `from_number` we sent was dropped by
+ * pydantic without a word and the message went out from whichever number
+ * `services/twilio_store.resolve_outbound` picked — a caller who passed
+ * `--from` got a DIFFERENT sender than the one they named, silently. The
+ * sending number is chosen by `--agent` (that agent's assigned number), else
+ * the org default.
+ */
 export function sendBody(flags) {
   const to = typeof flags.to === "string" ? flags.to : "";
   const body = typeof flags.body === "string" ? flags.body : typeof flags.message === "string" ? flags.message : "";
-  if (!to || !body) fatal('Usage: whissle sms send --to <+1…> --body "…" [--from <+1…>] [--agent <agent-id>]');
+  if (!to || !body) fatal('Usage: whissle sms send --to <+1…> --body "…" [--agent <agent-id>]');
   return {
     to_number: to,
     body,
-    ...(typeof flags.from === "string" && flags.from ? { from_number: flags.from } : {}),
     ...(typeof flags.agent === "string" && flags.agent ? { agent_id: flags.agent } : {}),
   };
 }
@@ -25,6 +34,8 @@ export async function run(sub, args, flags) {
   const org = await resolveOrgId();
 
   if (sub === "send") {
+    // Said rather than swallowed: the route cannot honour a chosen sender.
+    if (flags.from) warn("--from is not accepted by the send route — the number comes from --agent, else the org default. Ignoring it.");
     const body = sendBody(flags);
     const r = await post(EP.sms.send(org), body);
     if (flags.json) return printMutation(r, { sent: true, ...body });

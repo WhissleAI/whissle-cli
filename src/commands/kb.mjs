@@ -256,7 +256,11 @@ export async function run(sub, args, flags) {
     if (flags.url) {
       doc = await post(EP.agents.kb.fromUrl(agentId), { url: flags.url });
     } else if (flags.file) {
-      doc = await upload(EP.agents.kb.upload(agentId), { filePath: flags.file, fields: { title: flags.title } });
+      // `upload_kb` (routes/kb.py) takes `file` and nothing else — it derives
+      // the title from `file.filename`. A `title` part was dropped in silence,
+      // so the document appeared under a name the caller never chose.
+      if (flags.title) warn("--title is not accepted on a file upload — the title comes from the filename. Rename the file, or use `kb update <doc-id> --title`.");
+      doc = await upload(EP.agents.kb.upload(agentId), { filePath: flags.file });
     } else if (flags.text) {
       doc = await post(EP.agents.kb.base(agentId), {
         title: flags.title || "Snippet",

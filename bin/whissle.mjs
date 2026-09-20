@@ -253,7 +253,9 @@ ${bold("Compliance")}  ${dim("(needs compliance:read/write)")}  ${dim("— Do-No
   whissle compliance erase <+1…> --force   forget one person (GDPR/CCPA); the DNC entry stays
 
 ${bold("SMS")}  ${dim("— send one message; the delivery log + consent trail")}
-  whissle sms send --to <+1…> --body "…" [--from <+1…>] [--agent <id>]   sends a real text (billed)
+  whissle sms send --to <+1…> --body "…" [--agent <id>]   sends a real text (billed)
+                      ${dim("(the SENDING number comes from --agent, else the workspace default —")}
+                      ${dim(" the route has no from_number field)")}
   whissle sms messages [--limit N] | opt-outs | consents
   whissle sms opt-in <+1…>            re-enable a suppressed number
 
@@ -267,7 +269,8 @@ ${bold("Alerts")}  ${dim("— metric thresholds watched server-side; an event (a
                       [--agent <id>] [--window-hours 24] [--min-calls 0] [--cooldown-hours 24]
   whissle alerts rules update <id> [--…] | delete <id>
   whissle alerts rules test <id>      measure it right now — no event, no email, no cooldown
-  whissle alerts create --kind balance_below_usd --threshold 20 [--webhook <id>]   fires balance.threshold
+  whissle alerts create --kind balance_below_usd --threshold 20       fires balance.threshold on every
+                      ${dim("subscribed webhook (kind/door are create-only \u2014 re-create to change them)")}
   whissle alerts create --kind p95_ms_over --door chat_turn --threshold 1500       fires latency.threshold
   whissle alerts options              the valid metrics + comparators
   whissle alerts events [--days 30]   what actually fired
@@ -276,7 +279,8 @@ ${bold("Webhooks")}  ${dim("— your endpoint, called on session.ended · tool.h
   whissle webhooks create --url https://… --events session.ended,tool.held [--secret s]   (secret shown once)
   whissle webhooks list | delete <id> --force | test <id>
   whissle webhooks deliveries <id> [--limit N]   attempts, dead-letters   |   replay <id> <delivery-id>
-  whissle webhooks events             the event kinds + the signature scheme (offline)
+  whissle webhooks events [--offline]   the event kinds the GATEWAY accepts + the signature
+                      ${dim("scheme (--offline prints the built-in list without a round-trip)")}
 
 ${bold("Campaigns")}  ${dim("— SERVER-SIDE managed dialing (vs. `calls campaign` = client-side CSV batching)")}
   whissle campaigns list | get <id>

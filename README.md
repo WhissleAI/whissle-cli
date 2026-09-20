@@ -488,7 +488,9 @@ trail and the controls.
 ### Knowledge & custom tools
 ```bash
 whissle kb list <agent-id>
-whissle kb add <agent-id> --file handbook.pdf | --text "…" | --url https://acme.com/faq
+whissle kb add <agent-id> --file handbook.pdf | --text "…" --title T | --url https://acme.com/faq
+#   (--title applies to --text; a FILE is titled from its filename — rename it,
+#    or set the title afterwards with `kb update <agent-id> <doc-id> --title …`)
 whissle kb update <agent-id> <doc-id> --text "…"   # replace a document in place (reindexed)
 whissle kb remove <agent-id> <doc-id> --force      # also disarms any lookup tool built from it
 whissle kb sync <agent-id> ./docs [--namespace site] [--prune] [--dry-run] [--ext md,txt,html,json,csv]
@@ -643,14 +645,15 @@ whissle appointments calendar                     # connection status
 
 ### SMS (send, delivery log, consent)
 ```bash
-whissle sms send --to +14155550123 --body "Your table is ready." [--from +1…] [--agent <id>]   # billed
+whissle sms send --to +14155550123 --body "Your table is ready." [--agent <id>]   # billed
 whissle sms messages [--limit 50]
 whissle sms opt-outs | consents
 whissle sms opt-in +14155550123                   # re-enable a suppressed number
 ```
-`send` posts `{to_number, body, from_number?, agent_id?}` to the org's SMS
-route and bills for the message; a suppressed (opted-out) number is refused
-server-side. Agents still send most SMS themselves during and after calls.
+`send` posts `{to_number, body, agent_id?}` to the org's SMS route and bills
+for the message; a suppressed (opted-out) number is refused server-side. You
+cannot name the SENDING number — the route has no `from_number` field; it
+resolves the number assigned to `--agent`, else the workspace default. Agents still send most SMS themselves during and after calls.
 
 ### Analytics
 ```bash
@@ -667,7 +670,7 @@ whissle alerts rules add --name "Completion dropped" --metric completion_rate \
   [--min-calls 10] [--cooldown-hours 24]
 whissle alerts rules update <rule-id> --threshold 0.5 | delete <rule-id>
 whissle alerts rules test <rule-id>               # measure it RIGHT NOW — would it fire?
-whissle alerts create --kind balance_below_usd --threshold 20 [--webhook <id>]    # fires balance.threshold
+whissle alerts create --kind balance_below_usd --threshold 20     # fires balance.threshold
 whissle alerts create --kind p95_ms_over --door chat_turn --threshold 1500        # fires latency.threshold
 whissle alerts options                            # the valid metrics + comparators
 whissle alerts events --days 30                   # what actually fired
@@ -676,7 +679,11 @@ whissle alerts events --days 30                   # what actually fired
 floor (`balance_below_usd`) and a per-door p95 ceiling (`p95_ms_over`, `--door`
 names the door — `chat_turn`, `chat_turn_stream`, `vision`, `listen_start`, …).
 Each fires the matching webhook event (`balance.threshold` /
-`latency.threshold`) on your webhooks; `--webhook <id>` targets one.
+`latency.threshold`) to **every** webhook in the workspace subscribed to it —
+a firing fans out, there is no way to target one endpoint. `kind` and `door`
+are create-only: the update route does not accept them, so change one by
+deleting the rule and creating it again (the CLI refuses the edit rather than
+letting a 200 look like it worked).
 Rules are evaluated on a server-side loop and email you when they fire (turn
 that off per rule with `--notify-email false`). `test` runs the same measurement
 inline with no event row, no email and no cooldown consumed — sanity-check a new
@@ -688,11 +695,14 @@ whissle webhooks create --url https://you.example/hook --events session.ended,to
 whissle webhooks list | delete <id> --force | test <id>
 whissle webhooks deliveries <id> [--limit 50]     # every attempt, incl. dead-lettered ones
 whissle webhooks replay <id> <delivery-id>        # re-send one
-whissle webhooks events                           # the event kinds + the signature scheme (offline)
+whissle webhooks events [--offline]               # the event kinds the gateway accepts + the signature scheme
 ```
-Events: `session.ended` (with `end_reason`, `duration_sec`, `cost_usd`),
+Events today: `session.ended` (with `end_reason`, `duration_sec`, `cost_usd`),
 `tool.held`, `approval.decided`, `kb.ingested`, `balance.threshold`,
-`latency.threshold`. Every body is `{id, type, created_at, organization_id,
+`latency.threshold` — but `webhooks events` and `webhooks create` both read the
+live vocabulary from the gateway, so an event the platform adds is subscribable
+the day it ships rather than the day this list is next edited. `--offline`
+prints the built-in list without a round-trip. Every body is `{id, type, created_at, organization_id,
 data}` and every delivery is signed:
 
 ```

@@ -294,6 +294,10 @@ export const EP = {
   // replayable, under `deliveries`. Key resolves the org, so NOT org-prefixed.
   webhooks: {
     list: "/api/webhooks",
+    // The event vocabulary a subscription may name, from the same tuple the
+    // emitters use — so the CLI can never offer an event that never fires, nor
+    // refuse one the platform has just added. `{events[], test_event}`.
+    events: "/api/webhooks/events",
     create: "/api/webhooks",
     del: (id) => `/api/webhooks/${id}`,
     test: (id) => `/api/webhooks/${id}/test`,
@@ -402,7 +406,10 @@ export const EP = {
 
   // ── org-scoped: SMS delivery log + consent (/api/orgs/{org}/sms) ─────────────
   sms: {
-    // Sends a real text message and bills for it. `{to_number, body, from_number?, agent_id?}`.
+    // Sends a real text message and bills for it. `{to_number, body, agent_id?}`
+    // — `SmsSendBody` (routes/sms.py) declares those three and nothing else, so
+    // a `from_number` is dropped in silence and the sender is resolved from the
+    // agent's assigned number, else the org default.
     send: (org) => `/api/orgs/${org}/sms/send`,
     messages: (org) => `/api/orgs/${org}/sms/messages`,
     optOuts: (org) => `/api/orgs/${org}/sms/opt-outs`,
