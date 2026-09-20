@@ -324,6 +324,7 @@ ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
 ${bold("Speech engine, direct")}  ${dim("(needs models:invoke)")}  ${dim("— words + acoustic metadata, no agent")}
   whissle asr status                  is the engine up, which models + device
   whissle asr stream <file.wav|-> [--language en] [--metadata emotion,intent|none]
+                      ${dim("(no --metadata asks for EVERY tag; --metadata none asks for no head at all)")}
                       [--sample-rate 16000] [--realtime] [--partials] [--word-timestamps]
                       ${dim("s16le mono PCM in (a mono 16-bit WAV is read directly), JSON")}
                       ${dim("transcript events out. It does NOT open your microphone — pipe")}

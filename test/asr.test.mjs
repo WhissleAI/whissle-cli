@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { parse } from "../bin/whissle.mjs";
 import { gatewayRoot, asrStreamUrl } from "../src/config.mjs";
 import { ENGINES, engineField, transcribeFooter } from "../src/commands/models.mjs";
-import { METADATA_TAGS, configFrame, pcmLayout, eventLine, frames } from "../src/commands/asr.mjs";
+import { METADATA_TAGS, CLOSE_REASONS, configFrame, pcmLayout, eventLine, frames } from "../src/commands/asr.mjs";
 
 // ── the gateway origin: /asr/* lives ABOVE the /bot platform prefix ──────────
 
@@ -98,21 +98,36 @@ test("the command surfaces warnings before the transcript, on stderr", async () 
 
 // ── the streaming config frame ───────────────────────────────────────────────
 
-test("configFrame asks for metadata by default, and types the frame", () => {
+test("every config frame carries type:config — a bare object is discarded in silence", () => {
+  // No error, no acknowledgement: a config frame without `type` is dropped and
+  // the session quietly ignores the language and the tags you asked for. So it
+  // must be present on EVERY path through configFrame, not just the usual one.
+  for (const flags of [{}, { metadata: "none" }, { metadata: "emotion" }, { language: "hi" }, { hotwords: "Acme" }]) {
+    assert.equal(configFrame(flags).type, "config");
+  }
+});
+
+test("configFrame types the frame and leaves unset things unset", () => {
   const f = configFrame({});
-  assert.equal(f.type, "config");
   assert.equal(f.sample_rate, 16000);
-  assert.deepEqual(f.metadata_tags, ["emotion", "intent", "entity"]);
   assert.equal(f.metadata_prob, true);
   // No --language means the engine decides; sending "" would pin it to nothing.
   assert.ok(!("language" in f));
 });
 
-test("--metadata names the tags, --metadata none asks for no head at all", () => {
-  assert.deepEqual(configFrame({ metadata: "emotion,age" }).metadata_tags, ["emotion", "age"]);
+test("omitting metadata_tags asks for ALL tags; an empty array asks for NONE", () => {
+  // These are OPPOSITE requests on the wire, so an empty list can never be
+  // treated as "unset" — which is the bug this pins. `--metadata none` used to
+  // omit the field, i.e. ask for every tag: the exact inverse of what it says.
+  const all = configFrame({});
+  assert.ok(!("metadata_tags" in all), "no --metadata must OMIT the field, which asks for every tag");
+
   const none = configFrame({ metadata: "none" });
-  assert.ok(!("metadata_tags" in none) && !("metadata_prob" in none));
-  assert.ok(!("metadata_tags" in configFrame({ metadata: false })));
+  assert.deepEqual(none.metadata_tags, [], "--metadata none must send an EMPTY ARRAY, not nothing");
+  assert.ok(!("metadata_prob" in none), "nothing to put probabilities on");
+
+  assert.deepEqual(configFrame({ metadata: false }).metadata_tags, []);
+  assert.deepEqual(configFrame({ metadata: "emotion,age" }).metadata_tags, ["emotion", "age"]);
 });
 
 test("every tag the engine has a head for is accepted", () => {
@@ -216,4 +231,29 @@ test("the engine's control events each render as themselves", () => {
   assert.equal(eventLine({ type: "error", message: "model not loaded" }), "error: model not loaded");
   // An event kind we have never seen renders instead of vanishing.
   assert.equal(eventLine({ type: "speaker_change" }), "speaker_change");
+});
+
+test("a warning is not an error, and says the session is still running", () => {
+  // Back-pressure dropped audio. The session continues and keeps billing, and
+  // the transcript now has a hole in it that nothing else will ever mention.
+  const line = eventLine({ type: "warning", message: "input overflow, 320ms dropped" });
+  assert.match(line, /^warning: input overflow, 320ms dropped/);
+  assert.match(line, /still open and still billing/);
+  assert.doesNotMatch(line, /^error/);
+});
+
+test("a warning is printed, never swallowed, and goes to stderr", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const src = await readFile(new URL("../src/commands/asr.mjs", import.meta.url), "utf8");
+  // Under --json it is one more NDJSON row; otherwise stderr, so a caller
+  // piping stdout into a scoring script still learns that audio went missing.
+  assert.match(src, /if \(evt\.type === "warning"\) return warn\(eventLine\(evt\)\);/);
+});
+
+test("the close codes worth naming are named", () => {
+  // Retrying helps for 1013 and not for 1011, so a script has to tell them
+  // apart — "(socket closed)" for both would hide that.
+  assert.deepEqual(Object.keys(CLOSE_REASONS), ["1011", "1013"]);
+  assert.match(CLOSE_REASONS[1011], /internal error/);
+  assert.match(CLOSE_REASONS[1013], /overloaded|try again/);
 });

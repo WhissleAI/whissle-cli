@@ -862,7 +862,7 @@ SDK's job, not this one.
 | flag | what it does |
 |---|---|
 | `--language xx` | ask the engine for a language; omit it and it decides |
-| `--metadata a,b` \| `none` | which metadata heads to ask for (default `emotion,intent,entity`) |
+| `--metadata a,b` \| `none` | which metadata heads to ask for — **default: all of them** |
 | `--partials` | print interim transcripts too, not just finals |
 | `--word-timestamps` | ask for per-word timings |
 | `--hotwords "Acme Corp,SKU-42"` | bias the decoder toward names it would otherwise miss |
@@ -887,10 +887,25 @@ right tool; this one is for a stream.
 **Metadata is a request, not a promise.** `--metadata` names the heads you want;
 whether a tag comes back depends on which model this deployment loaded, and the
 smallest English model has no metadata head at all. A tag the model cannot serve
-is simply **absent** from the events — no error. And `asr status` will not tell
-you in advance: it reports models, decoder, vocabulary, LM languages and device,
-and nothing about classifier heads. **Never promise a customer emotion scores
-without having seen them come back from the deployment you are on.**
+is simply **absent** from the events — no error. And **nothing tells you in
+advance**: `asr status` reports models, decoders, vocabulary sizes and
+providers, and no metadata categories whatsoever. The only way to know is to
+run a sample clip and read what comes back. **Never promise a customer emotion
+scores without having seen them arrive from the deployment you are on.**
+
+Note that on the wire, **omitting** the tag list and sending an **empty** one
+are opposite requests: no `--metadata` omits it and asks for *every* tag (which
+is why it is the default — it is also the right setting for finding out what
+this deployment can do), while `--metadata none` sends `[]` and asks for no
+metadata head at all.
+
+Two event kinds are worth knowing apart. `error` ends the session. **`warning`
+does not** — it means back-pressure dropped some audio, the session is still
+open and **still billing**, and the transcript now has a hole in it that nothing
+else will mention. The CLI prints warnings to stderr as they arrive rather than
+folding them into the transcript. On close, `1011` (the engine hit an internal
+error) and `1013` (the engine is overloaded, come back later) are reported by
+name — retrying helps for one of them and not the other.
 
 Speech **translation** (`/asr/translate`) and speech-to-speech (`/asr/s2s`) are
 deliberately **not** reachable with a workspace key. They compose speech with a

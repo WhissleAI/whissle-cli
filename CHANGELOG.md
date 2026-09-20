@@ -33,16 +33,37 @@ silence.
 
 - **`whissle asr`** (new group) — the speech engine itself.
 
-  - `asr status` — engine, models, decoder, LM languages, device. It says out
-    loud that it does **not** list which metadata heads are loaded, because no
-    endpoint does.
+  - `asr status` — engine, models, decoders, vocabulary sizes, device. It says
+    out loud that it reports **no metadata categories at all**, because nothing
+    does: there is no endpoint that tells you which heads a deployment loaded.
+    The only way to know is to run a sample clip and read what comes back.
   - `asr stream <file.wav|->` — opens `wss://<gateway>/asr/stream?token=wsk_…`
     (the token is a query parameter because a browser cannot set a header on a
     WebSocket), sends the JSON config frame, streams s16le mono PCM and renders
     the transcript events: finals by default, `--partials` for interim,
     metadata tags inline, `--json` for NDJSON of every frame exactly as the
     engine sent it. Flags: `--language`, `--metadata a,b|none`,
-    `--word-timestamps`, `--hotwords`, `--sample-rate`, `--realtime`.
+    `--word-timestamps`, `--hotwords`, `--sample-rate`, `--realtime`,
+    `--chunk-ms`, `--flush-timeout`.
+
+  Four wire details the command gets right on purpose, because each has a
+  silent failure mode:
+
+  - The config frame always carries `type: "config"`. Without it the frame is
+    **discarded in silence** — no error, no acknowledgement, and a session that
+    ignores the language and tags you asked for.
+  - **Omitting `metadata_tags` asks for EVERY tag; sending `[]` asks for none.**
+    They are opposite requests, so an empty list is never treated as unset. No
+    `--metadata` omits the field (all tags — also the right default for finding
+    out what a deployment can do); `--metadata none` sends `[]`.
+  - `warning` and `error` are different events. A warning means back-pressure
+    dropped audio: the session is **still open and still billing**, and the
+    transcript now has a hole in it that nothing else will mention. Warnings
+    print to stderr as they arrive rather than being folded into the transcript
+    or swallowed.
+  - Close codes `1011` (engine internal error) and `1013` (engine overloaded,
+    retry later) are reported by name — retrying helps for one and not the
+    other, so a script has to be able to tell them apart.
 
   **It does not open your microphone, deliberately.** Node has none, and
   capturing one means a native addon or a hard dependency on a sound stack —
@@ -105,7 +126,8 @@ the caller the thing they asked for had happened.
   `asr stream` distinction, the per-second-open billing, and the standing
   warning that **metadata is a request, not a promise**: whether a tag comes
   back depends on the model this deployment loaded, the smallest English model
-  has no metadata head at all, and `asr status` cannot tell you in advance.
+  has no metadata head at all, and nothing — `asr status` included — can tell
+  you in advance. Run a sample clip and read what arrives.
 - Documented as a deliberate limit, not a gap: `/asr/translate` and `/asr/s2s`
   are **not** reachable with a workspace key — they compose speech with a
   language model and those legs have no per-second price, so a `wsk_` there

@@ -40,26 +40,42 @@ import { EXIT } from "../exit.mjs";
 /** The metadata tags the engine has heads for (pipecat-bot/DEPLOY_CONFIG.md). */
 export const METADATA_TAGS = ["emotion", "intent", "entity", "age", "gender", "dialect", "behavior", "eval", "role"];
 
-const DEFAULT_TAGS = ["emotion", "intent", "entity"];
-
 /**
  * The JSON config frame sent before the first audio byte.
  *
- * `metadata_tags` is a REQUEST, never a promise: whether a tag comes back
- * depends on which model this deployment loaded, and the smallest English model
- * has no metadata head at all. A tag the model cannot serve is simply absent
- * from the events — there is no error and, checked against the gateway, no
- * status endpoint that lists them either. Ask, then read what arrives.
+ * ── `type: "config"` is load-bearing ────────────────────────────────────────
+ * A config object WITHOUT it is discarded in silence: no error, no
+ * acknowledgement, and a session that quietly ignores your language and your
+ * tags. So it is set unconditionally, on every path through this function.
+ *
+ * ── omitted ≠ empty ─────────────────────────────────────────────────────────
+ * OMITTING `metadata_tags` asks for EVERY tag; sending `[]` asks for NONE.
+ * They are opposite requests, so an empty list can never be treated as "unset":
+ *
+ *   no --metadata         → field omitted  → every tag the model has
+ *   --metadata emotion,age → ["emotion","age"]
+ *   --metadata none        → []            → no metadata head at all
+ *
+ * Defaulting to "every tag" is also the right default for discovery, which
+ * matters because…
+ *
+ * ── metadata is a REQUEST, never a promise ──────────────────────────────────
+ * Whether a tag comes back depends on which model this deployment loaded, and
+ * the smallest English model has no metadata head at all. A tag the model
+ * cannot serve is simply absent from the events — no error. And nothing tells
+ * you in advance: `/asr/status` returns models, decoders, vocabulary sizes and
+ * providers, and no metadata categories whatsoever. Ask on a sample clip, read
+ * what comes back, and never promise emotion unconditionally.
  *
  * Pure — exported for tests.
  */
 export function configFrame(flags) {
-  const tags = flags.metadata === false || flags.metadata === "none"
-    ? []
-    : typeof flags.metadata === "string"
-      ? flags.metadata.split(",").map((s) => s.trim()).filter(Boolean)
-      : DEFAULT_TAGS;
-  for (const t of tags) {
+  const asked = flags.metadata;
+  const none = asked === false || asked === "none";
+  const named = typeof asked === "string" && !none
+    ? asked.split(",").map((s) => s.trim()).filter(Boolean)
+    : null;
+  for (const t of named || []) {
     if (!METADATA_TAGS.includes(t)) {
       fatal(`--metadata: "${t}" is not a tag. Valid: ${METADATA_TAGS.join(", ")} (or --metadata none).`);
     }
@@ -69,10 +85,11 @@ export function configFrame(flags) {
     sample_rate: Number(flags["sample-rate"]) || 16000,
     ...(typeof flags.language === "string" && flags.language ? { language: flags.language } : {}),
   };
-  if (tags.length) {
-    frame.metadata_tags = tags;
-    frame.metadata_prob = true;
-  }
+  // `[]` for none, the named list when named, and NOTHING when the caller said
+  // nothing — which is how you ask for all of them.
+  if (none) frame.metadata_tags = [];
+  else if (named) frame.metadata_tags = named;
+  if (!none) frame.metadata_prob = true;
   if (typeof flags.hotwords === "string" && flags.hotwords) {
     frame.hotwords = flags.hotwords.split(",").map((s) => s.trim()).filter(Boolean);
   }
@@ -123,10 +140,23 @@ export function pcmLayout(buf) {
   throw new Error("WAV has no data chunk — re-encode it.");
 }
 
-/** A transcript/metadata event → one line. Pure — exported for tests. */
+/**
+ * A transcript/metadata event → one line. Pure — exported for tests.
+ *
+ * `warning` and `error` are DIFFERENT events and must not be collapsed. An
+ * error ends the session; a warning means back-pressure dropped audio — the
+ * session is still running and STILL BILLING, and the transcript now has a
+ * hole in it that nothing else will ever mention. Swallowing that is how a
+ * caller ends up trusting a transcript that is missing a sentence.
+ *
+ * The transcript event is `{type:"transcript", text, is_final, metadata?}`.
+ * There is no `final`, no `start_s` and no `language` on it, so there are no
+ * fallbacks here for fields that do not exist.
+ */
 export function eventLine(evt) {
   if (!evt || typeof evt !== "object") return String(evt ?? "");
   if (evt.type === "error") return `error: ${evt.message || "(no message)"}`;
+  if (evt.type === "warning") return `warning: ${evt.message || "(no message)"} — the session is still open and still billing`;
   if (evt.type === "flush_done") return "(flushed)";
   if (evt.type === "end") return "(end)";
   if (evt.type !== "transcript") return evt.type || JSON.stringify(evt);
@@ -150,6 +180,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Let at most this much audio sit unsent in the socket's buffer (1 MiB ≈ 32s). */
 const SEND_HIGH_WATER = 1 << 20;
+
+/** Close codes worth naming rather than reporting as "the socket closed". */
+export const CLOSE_REASONS = {
+  1011: "the engine hit an internal error and gave up on this session",
+  1013: "the engine is overloaded and is asking you to try again later",
+};
 
 /** Everything on stdin, as one buffer. */
 async function readStdin() {
@@ -221,6 +257,11 @@ async function runStream(args, flags) {
           Object.assign(new Error(`socket refused (${e.code}): ${e.reason || "the key is not valid for streaming speech"}. Needs a wsk_ key with \`models:invoke\`.`), { auth: true }),
         );
       }
+      // A named close beats "(socket closed)": 1011 is the engine failing, 1013
+      // is it asking you to come back later. Retrying helps for exactly one of
+      // them, so a script has to be able to tell them apart.
+      const named = CLOSE_REASONS[e.code];
+      if (named) return reject(new Error(`socket closed (${e.code}): ${e.reason || named}`));
       resolve();
     });
     ws.addEventListener("message", (e) => {
@@ -232,6 +273,9 @@ async function runStream(args, flags) {
         return out(e.data);
       }
       if (flags.json) return out(JSON.stringify(evt));
+      // A warning is not part of the transcript, and a caller piping stdout
+      // into a scoring script still needs to see that audio went missing.
+      if (evt.type === "warning") return warn(eventLine(evt));
       if (evt.type === "transcript" && !evt.is_final && !flags.partials) return;
       const line = eventLine(evt);
       if (!line) return;
@@ -291,8 +335,9 @@ export async function run(sub, args, flags) {
     // device — it does NOT list which metadata heads are loaded. Saying so is
     // the difference between a caller who reads what comes back and one who
     // promises a customer emotion scores this deployment cannot produce.
-    out(dim(`\n  This does not say which metadata tags the loaded model serves — no endpoint does.`));
-    out(dim(`  Ask for them on the stream and read what arrives: whissle asr stream <file> --metadata emotion,intent`));
+    out(dim(`\n  Models, decoders, vocabulary sizes and providers — and no metadata categories.`));
+    out(dim(`  Nothing tells you which tags this deployment serves; run a sample clip and read`));
+    out(dim(`  what comes back:  whissle asr stream sample.wav --json`));
     return;
   }
 
