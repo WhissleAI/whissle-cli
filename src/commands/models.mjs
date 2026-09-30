@@ -9,10 +9,15 @@ import { out, ok, md, table, dim, warn, printJson, fatal } from "../ui.mjs";
  *
  * `whissle` is Whissle's own model: it is the only one that also produces
  * ACOUSTIC METADATA (emotion, intent, age, gender, …) alongside the words, which
- * is the whole reason to ask for it by name. The other two are third parties
+ * is the whole reason to ask for it by name. The other three are third parties
  * that return text and nothing else.
+ *
+ * `verbit` is ENGLISH ONLY, and naming it for another language degrades to the
+ * platform default — which the response tells you about, in `warnings`. It also
+ * runs on Verbit's streaming socket rather than a batch job, so a long upload
+ * takes roughly as long as the audio; for hours of media, prefer another engine.
  */
-export const ENGINES = ["deepgram", "sarvam", "whissle"];
+export const ENGINES = ["deepgram", "sarvam", "whissle", "verbit"];
 
 /**
  * The `engine` form field from `--engine`, or `undefined` to let the platform
@@ -99,7 +104,7 @@ export async function run(sub, args, flags) {
     // and — since 1.6.0 — you may also name the ENGINE. Omit `--engine` and the
     // platform still picks one from the language, exactly as it always did.
     const file = args[0] || fatal(
-      "Usage: whissle models transcribe <audio-file> [--language en|hi|te|hinglish|tenglish] [--diarize] [--engine whissle|deepgram|sarvam]");
+      "Usage: whissle models transcribe <audio-file> [--language en|hi|te|hinglish|tenglish] [--diarize] [--engine whissle|deepgram|sarvam|verbit]");
     const engine = engineField(flags);
     const r = await upload(EP.models.transcribe, {
       filePath: file,

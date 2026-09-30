@@ -118,6 +118,7 @@ See `examples/onboarding/README.md` for the annotated version.
 ```bash
 whissle agents list
 whissle agents create --name "Acme Support" --prompt "You are Acme's support agent." --type customer_support
+whissle agents update <id> --ear verbit    # which engine DECODES the words (English only)
 whissle agents create --file agent.json          # full package: agent + audio/config + knowledge
 whissle agents get <id>
 whissle agents update <id> --prompt "…"
@@ -786,21 +787,27 @@ whissle models transcribe call.mp3 --language hi         # Hindi (Devanagari)
 whissle models transcribe call.mp3 --language hinglish   # Hindi–English code-mixed
 whissle models transcribe call.wav --language en --diarize --json   # speaker-tagged segments
 whissle models transcribe call.wav --engine whissle      # Whissle's own model, with metadata
+whissle models transcribe call.wav --engine verbit       # Verbit (English only)
 ```
 
 | flag | values | default |
 |---|---|---|
 | `--language` | `en` · `hi` · `te` · `hinglish` · `tenglish` | `en` |
 | `--diarize` | (bool) tag speaker turns | off |
-| `--engine` | `whissle` · `deepgram` · `sarvam` | chosen from `--language` |
+| `--engine` | `whissle` · `deepgram` · `sarvam` · `verbit` | chosen from `--language` |
 | `--json` | the whole payload | table |
 
 **`--engine whissle` is the one that returns metadata.** Whissle's own model
 runs a parallel metadata head, so the response carries a `metadata` block
 (emotion, intent, age, gender, role, … with confidences) beside the words. The
-other two are third-party engines that return text and nothing else. Omit
+other three are third-party engines that return text and nothing else. Omit
 `--engine` and the platform picks from the language exactly as it always has —
 a 1.5.0 invocation sends byte-identical bytes.
+
+**`--engine verbit` is English only**, and it runs on Verbit's streaming socket
+rather than a batch job — so a long upload takes roughly as long as the audio.
+Ask for it in another language, or on a deployment with no Verbit key, and it
+degrades like everything else below. For hours of media, prefer another engine.
 
 **The platform degrades rather than failing.** Ask for an engine this
 deployment cannot reach and you get a perfectly ordinary-looking transcript

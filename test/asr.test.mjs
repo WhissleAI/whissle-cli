@@ -37,10 +37,18 @@ test("asrStreamUrl carries the key as a query param, over wss", () => {
 
 // ── models transcribe --engine ───────────────────────────────────────────────
 
-test("engineField accepts the three engines, case- and space-insensitively", () => {
-  assert.deepEqual(ENGINES, ["deepgram", "sarvam", "whissle"]);
+test("engineField accepts every engine, case- and space-insensitively", () => {
+  assert.deepEqual(ENGINES, ["deepgram", "sarvam", "whissle", "verbit"]);
   for (const e of ENGINES) assert.equal(engineField({ engine: e }), e);
   assert.equal(engineField({ engine: " Whissle " }), "whissle");
+  assert.equal(engineField({ engine: " VERBIT " }), "verbit");
+});
+
+test("the engine list is the gateway's, so a valid engine is never refused here", () => {
+  // `--engine` is validated in the CLI so a typo costs a round-trip rather than
+  // an upload. That is only safe while this list matches `routes/models.py`
+  // `_ENGINES`; when it lags, the CLI refuses an engine the platform serves.
+  assert.ok(ENGINES.includes("verbit"), "verbit shipped on the gateway; the CLI would reject it");
 });
 
 test("omitting --engine sends no engine field at all", () => {
