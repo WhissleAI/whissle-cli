@@ -84,8 +84,9 @@ ${bold("Configure agents")}
   whissle agents list
   whissle agents get <id>
   whissle agents create --name N --prompt P [--type customer_support] [--greeting G]
+                        [--ear deepgram|sarvam|whissle|verbit]
   whissle agents create --file agent.json
-  whissle agents update <id> [--prompt … | --file …]
+  whissle agents update <id> [--prompt … | --file … | --ear verbit]
   whissle agents delete <id>
   whissle agents versions <id>        saved-config history (every save is snapshotted)
   whissle agents rollback <id> <version-id>   restore content; deployment untouched
@@ -315,7 +316,7 @@ ${bold("Channels — one agent, everywhere")}
 ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
   whissle models chat "prompt" [--system …] [--fast]
   whissle models tts "text" [--voice …] --out speech.mp3
-  whissle models transcribe audio.wav [--language xx] [--diarize] [--engine whissle|deepgram|sarvam]
+  whissle models transcribe audio.wav [--language xx] [--diarize] [--engine whissle|deepgram|sarvam|verbit]
                       ${dim("(--engine whissle is the only one that returns acoustic metadata; the")}
                       ${dim(" platform DEGRADES with a `warnings` line rather than failing, and the")}
                       ${dim(" `engine` it reports is the one that actually ran)")}

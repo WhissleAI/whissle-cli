@@ -9,11 +9,27 @@ import { EP } from "../endpoints.mjs";
 import { out, err, ok, table, kv, trunc, dim, bold, printJson, printMutation, fatal } from "../ui.mjs";
 import { exitCodeFor } from "../exit.mjs";
 
+/**
+ * The ears an agent may be given (`models.STT_PROVIDERS` on the gateway).
+ *
+ * This selects the engine that DECODES THE WORDS, not the stack the session
+ * runs on. Every one of them is capability-checked on the box before the
+ * session is built, so naming one this deployment cannot serve degrades to
+ * whatever it can — it never kills the call.
+ *
+ * `verbit` is English only and degrades for any other language.
+ */
+export const EARS = ["deepgram", "sarvam", "whissle", "verbit"];
+
 // Fields that go in the create body vs. a follow-up PATCH (audio/config are
 // PATCH-only). Anything else in the file is passed through to create as-is.
-const CREATE_FIELDS = [
+export const CREATE_FIELDS = [
   "name", "system_prompt", "greeting", "agent_type", "direction",
   "voice", "voice_gender", "language_mode", "variables", "tools", "video_enabled",
+  // Which engine DECODES THE WORDS. Omit it and the agent gets the platform
+  // default; it was not settable from here at all, so an agent file could not
+  // describe its own ear and `agents get` could not show you one.
+  "stt_provider",
 ];
 const PATCH_FIELDS = [
   "audio_ambience", "audio_humanizer_intensity", "ambient_scene", "ambient_level_db",
@@ -24,7 +40,9 @@ const PATCH_FIELDS = [
   "flow",
 ];
 
-function bodyFromFlags(flags) {
+// Exported for its own test: `--ear` is validated here, and a validator that
+// nothing checks is how the CLI comes to refuse an engine the platform serves.
+export function bodyFromFlags(flags) {
   const b = {};
   if (flags.name) b.name = flags.name;
   if (flags.prompt) b.system_prompt = flags.prompt;
@@ -34,6 +52,16 @@ function bodyFromFlags(flags) {
   if (flags["voice-gender"]) b.voice_gender = flags["voice-gender"];
   if (flags.language) b.language_mode = flags.language;
   if (flags.direction) b.direction = flags.direction;
+  // `--ear`, not `--stt-provider`: the flag names what it does to the agent
+  // rather than the column it writes. Validated here so a typo costs a
+  // round-trip instead of a silently-ignored PATCH.
+  if (flags.ear) {
+    const ear = String(flags.ear).trim().toLowerCase();
+    if (!EARS.includes(ear)) {
+      fatal(`--ear must be one of ${EARS.join(" | ")} (got "${flags.ear}"). Omit it for the platform default.`);
+    }
+    b.stt_provider = ear;
+  }
   return b;
 }
 
