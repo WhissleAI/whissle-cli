@@ -1,16 +1,84 @@
 # Changelog
 
+## 1.7.0 — 2026-09-30
+
+Verbit joined the platform's speech engines, and an agent's **ear** — the engine
+that decodes the caller's words — became settable from the CLI for the first
+time. Plus four wire corrections to `asr stream` that were each silently wrong.
+
+### Added
+
+- **`whissle models transcribe --engine verbit`** — a fourth engine. Verbit is
+  **English only**, and it runs on a streaming socket rather than a batch job,
+  so a long upload takes roughly as long as the audio; for hours of media,
+  prefer another engine. Ask for it in another language, or on a deployment
+  without a Verbit key, and the platform degrades as it always has — the
+  `warnings` entry now names which gate closed rather than guessing.
+
+  `--engine` is validated in the CLI so a typo costs a round-trip rather than an
+  upload, which is only safe while this list matches the gateway's. A test now
+  pins it, and says why.
+
+- **`whissle agents create|update --ear deepgram|sarvam|whissle|verbit`** — the
+  bigger gap, and it predates Verbit. The CLI could set an agent's voice, its
+  language mode, its tools and its whole conversation flow, and **not the one
+  thing that decides whether it hears the caller**. `stt_provider` was also
+  missing from the fields a file-based create carries, so an agent spec that
+  round-tripped through `agents create --file` silently lost its ear.
+
+  Named `--ear` rather than `--stt-provider` because it names what it does to
+  the agent, not the column it writes. Every ear is capability-checked on the
+  gateway before a session is built, so naming one a deployment cannot serve
+  degrades to whatever it can — it never kills the call.
+
+### Fixed
+
+- **`asr stream --metadata none` asked for the opposite of what it says.** On
+  the wire, OMITTING `metadata_tags` asks for EVERY tag and sending `[]` asks
+  for none. The frame builder dropped the field whenever the tag list came out
+  empty, so `--metadata none` requested every head the model has. Now no
+  `--metadata` omits the field, `--metadata none` sends `[]`, and an empty list
+  is never treated as unset. The old fixed three-tag default is gone with it.
+
+- **A `warning` event was collapsed into the unknown-event path** and reported
+  as an error. It is not one: it means back-pressure dropped audio, the session
+  is **still open and still billing**, and the transcript now has a hole in it
+  that nothing else will ever mention. It prints to stderr as it arrives —
+  visible even when stdout is piped into a scoring script — and says the session
+  is continuing.
+
+- **Close codes 1011 and 1013 are named.** "(socket closed)" for both hid the
+  only thing a caller needs: retrying helps for 1013 (engine overloaded) and
+  does not for 1011 (engine internal error).
+
+- **`type: "config"` is asserted on every path through the frame builder**, not
+  just the usual one. A config object without it is discarded in silence.
+
+- **`asr status` copy corrected.** The shared contract said the endpoint reports
+  which metadata tags a deployment serves. The engine returns models, decoders,
+  vocabulary sizes and providers, and **no metadata categories at all**. The
+  command and the README say so now, and point at the only honest method: run a
+  sample clip and read what comes back.
+
+### Changed
+
+- **`asr stream` back-pressures the send.** `send` buffers, so an un-paced
+  stream of a long file queued the whole thing in memory and handed the engine a
+  burst it then sat on — which costs more wall clock on a socket billed by the
+  second than waiting a few milliseconds does. It now waits whenever more than
+  1 MiB (~32 s of audio) is unsent.
+
+- **`--chunk-ms` and `--flush-timeout` are documented.** They were read and
+  undocumented. The README flag table carries them, with a note that the input
+  is buffered in memory — so a long recording belongs on the batch door, not
+  this one.
+
 ## 1.6.0 — 2026-09-20
 
 Whissle's own speech engine became self-serve on the platform this week: a
 workspace secret key carrying `models:invoke` now opens it. This release reaches
 it — and fixes four flags that were being sent to the gateway and dropped in
 silence.
-
-> **npm is one release behind.** 1.5.0 was never published, so `listen`,
-> `vision`, `webhooks`, `kb sync` and `chat turn --schema/--cite` are in this
-> repo and not yet installable from npm. `npm i -g github:WhissleAI/whissle-cli`
-> until the next publish.
 
 ### Added
 
