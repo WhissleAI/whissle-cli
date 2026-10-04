@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.8.0 — 2026-10-04
+
+`models chat` catches up with the gateway's JSON mode and tool calling.
+
+### Added
+
+- **`--json-object`** on `models chat` — asks the ENDPOINT to constrain the
+  decode. Distinct from `--json`, which is this CLI's machine-output flag; two
+  flags that both say json will be confused, so the help text names the
+  difference rather than leaving it to be discovered.
+
+### Fixed
+
+- **A tool-calling turn printed a blank line.** When the model calls a tool the
+  reply has EMPTY text — that is the answer, not a failure — so `models chat`
+  now prints the calls.
+- **`json_valid=false` says what to do about it** (raise `--max-tokens`, check
+  `finish_reason`), because the overwhelming cause is truncation mid-object and
+  "invalid json" alone tells you what broke rather than what would have worked.
+
 ## 1.7.0 — 2026-09-30
 
 Verbit joined the platform's speech engines, and an agent's **ear** — the engine

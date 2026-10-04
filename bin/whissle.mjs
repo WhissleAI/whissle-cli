@@ -314,7 +314,9 @@ ${bold("Channels — one agent, everywhere")}
   whissle numbers list | release <number-id>
 
 ${bold("À-la-carte models")}  ${dim("(needs models:invoke)")}
-  whissle models chat "prompt" [--system …] [--fast]
+  whissle models chat "prompt" [--system …] [--fast] [--json-object]
+                              --json-object constrains the MODEL to emit JSON
+                              (distinct from --json, which is this CLI's output)
   whissle models tts "text" [--voice …] --out speech.mp3
   whissle models transcribe audio.wav [--language xx] [--diarize] [--engine whissle|deepgram|sarvam|verbit]
                       ${dim("(--engine whissle is the only one that returns acoustic metadata; the")}
