@@ -72,9 +72,27 @@ export async function run(sub, args, flags) {
     const messages = [];
     if (flags.system) messages.push({ role: "system", content: flags.system });
     messages.push({ role: "user", content: prompt });
-    const r = await post(EP.models.chat, { messages, fast: !!flags.fast, ...(flags["max-tokens"] ? { max_tokens: Number(flags["max-tokens"]) } : {}) });
+    // --json-object asks the ENDPOINT to constrain the decode, which is not the
+    // same as --json (that one is this CLI's machine-output flag). Two different
+    // things that both say json, so the help text names the distinction.
+    const r = await post(EP.models.chat, {
+      messages,
+      fast: !!flags.fast,
+      ...(flags["max-tokens"] ? { max_tokens: Number(flags["max-tokens"]) } : {}),
+      ...(flags["json-object"] ? { response_format: { type: "json_object" } } : {}),
+    });
     if (flags.json) return printJson(r);
-    out(md(r.text));
+    // A tool-calling turn returns EMPTY text — that is the answer, not a
+    // failure — so print the calls rather than a blank line.
+    if (r.tool_calls?.length) {
+      for (const c of r.tool_calls) out(`  ${c.name}(${JSON.stringify(c.input ?? {})})`);
+    } else {
+      out(md(r.text));
+    }
+    if (r.json_valid === false) {
+      out(dim("\n  json_valid=false — the reply did not parse. Usually truncation:"));
+      out(dim("  raise --max-tokens and check finish_reason."));
+    }
     out(dim(`\n  ${r.usage?.input_tokens ?? "?"}→${r.usage?.output_tokens ?? "?"} tokens · $${r.cost_usd ?? "?"} · ${r.latency_ms ?? "?"}ms`));
     return;
   }
