@@ -760,6 +760,7 @@ whissle usage sessions --day 2026-08-30 [--channel voice]   # per-session breakd
 whissle usage export [--days 30] [--out usage.csv]    # the whole window as CSV (--out - for stdout)
 whissle usage --by agent|cost_center|subject|session [--since ISO] [--until ISO]   # the ATTRIBUTION view
 whissle models chat "Summarize this" --fast
+whissle models chat "Give me JSON" --json-object        # constrains the MODEL (not --json, our output flag)
 whissle models tts "Hello" --out hi.mp3                       # English (default)
 whissle models tts "नमस्ते, कैसे हैं आप?" --language hi --out namaste.mp3   # speaks Hindi
 whissle models voices                             # voice ids for --voice (grouped by engine)
