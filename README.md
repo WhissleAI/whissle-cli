@@ -31,11 +31,7 @@ npm i -g @whissle/cli
 whissle version
 ```
 
-`main` in this repo runs **two releases** ahead of npm, which is still on
-**1.4.0**. Everything 1.5.0 and 1.6.0 added — `listen`, `vision`, `webhooks`,
-`kb sync`, `chat turn --schema/--cite`, and the whole `asr` group plus
-`models transcribe --engine` — is documented here and **not installable from
-npm yet**. Until the next publish, install from git:
+To run the latest `main` before it is published, install from git:
 
 ```bash
 npm i -g github:WhissleAI/whissle-cli
